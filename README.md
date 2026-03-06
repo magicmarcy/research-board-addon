@@ -7,33 +7,33 @@ Aktuelle Version: **1.3.0**
 
 ## Features
 
-- Themen verwalten: anlegen, bearbeiten, sortieren, archivieren, loeschen
-- Eintraege erfassen: Link, Textzitat, Notiz, aktuelle Seite
-- Capture per Kontextmenue: Seite, Link oder Auswahl direkt in ein Thema speichern
-- Drag-and-Drop-Unterstuetzung fuer Inhalte und Sortierung
-- Suche in Themen und Eintraegen
+- Themen verwalten: anlegen, bearbeiten, sortieren, archivieren, löschen
+- Einträge erfassen: Link, Textzitat, Notiz, aktuelle Seite
+- Capture per Kontextmenü: Seite, Link oder Auswahl direkt in ein Thema speichern
+- Drag-and-Drop-Unterstützung für Inhalte und Sortierung
+- Suche in Themen und Einträgen
 - Import/Export als JSON:
   - Gesamte Daten exportieren/importieren
   - Einzelnes Thema exportieren
-  - Import-Modi: zusammenfuehren oder ersetzen
+  - Import-Modi: zusammenführen oder ersetzen
 - Lokale Auto-Backups mit Intervall, manuellem Backup und Restore (inkl. Sicherheits-Backup vor Wiederherstellung)
-- Vollstaendig lokal, ohne externe Backend-Abhaengigkeit
+- Vollständig lokal, ohne externe Backend-Abhängigkeit
 
 ## Installation
 
-### 1. Entwicklung (temporar laden)
+### 1. Entwicklung (temporär laden)
 
 1. `manifest.template.json` nach `manifest.json` kopieren
 2. In `manifest.json` unter `browser_specific_settings.gecko.id` eine eigene Add-on-ID eintragen
-3. Firefox oeffnen: `about:debugging#/runtime/this-firefox`
-4. `Temporäres Add-on laden` auswaehlen
-5. Die lokale Datei `manifest.json` waehlen
+3. Firefox öffnen: `about:debugging#/runtime/this-firefox`
+4. `Temporäres Add-on laden` auswählen
+5. Die lokale Datei `manifest.json` wählen
 
-Hinweis: Temporare Add-ons werden nach einem Firefox-Neustart entfernt.
+Hinweis: Temporäre Add-ons werden nach einem Firefox-Neustart entfernt.
 
 ### 2. Signiertes XPI (dauerhaft installieren)
 
-Fuer den regulären Firefox-Release-Kanal ist in der Regel ein signiertes Add-on noetig (z. B. unlisted Signierung ueber addons.mozilla.org).
+Für den regulären Firefox-Release-Kanal ist in der Regel ein signiertes Add-on nötig (z. B. unlisted Signierung über addons.mozilla.org).
 
 ### 3. Open-Source, aber ohne bereitgestellte Signatur
 
@@ -45,8 +45,8 @@ Wenn du das Add-on dauerhaft installieren willst, musst du ein eigenes signierte
 
 Die Add-on-ID in der Manifest-Datei identifiziert ein Add-on eindeutig.
 
-- Fuer Forks und eigene Signierung immer eine eigene `gecko.id` verwenden
-- Dieses Repository liefert keine Signatur und kein veroeffentlichtes AMO-Listing
+- Für Forks und eigene Signierung immer eine eigene `gecko.id` verwenden
+- Dieses Repository liefert keine Signatur und kein veröffentlichtes AMO-Listing
 - `manifest.json` ist bewusst in `.gitignore`, damit keine private/produktive ID versehentlich committed wird
 
 ## Entwicklung
@@ -68,11 +68,11 @@ npx web-ext run
 npx web-ext build
 ```
 
-Das Build-Artefakt landet standardmaessig in `web-ext-artifacts/`.
+Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
 
 ## Nutzung (Kurzfassung)
 
-1. Sidebar ueber Toolbar-Icon `Research Board` oeffnen.
+1. Sidebar über Toolbar-Icon `Research Board` öffnen.
 2. Thema anlegen oder `Inbox` verwenden.
 3. Inhalte speichern:
    - Rechtsklick auf Seite/Link/Auswahl -> `Zum Research Board hinzufügen`
@@ -86,15 +86,15 @@ Das Build-Artefakt landet standardmaessig in `web-ext-artifacts/`.
 Das Add-on nutzt folgende Firefox-Berechtigungen:
 
 - `storage`: Lokale Einstellungen und Backup-Metadaten speichern
-- `tabs`: Tab-URL/Titel fuer Eintraege nutzen und Links in neuen Tabs oeffnen
-- `contextMenus`: Kontextmenue-Eintraege fuer schnelles Erfassen bereitstellen
-- `alarms`: Zeitgesteuerte Auto-Backups ausfuehren
+- `tabs`: Tab-URL/Titel für Einträge nutzen und Links in neuen Tabs öffnen
+- `contextMenus`: Kontextmenü-Einträge für schnelles Erfassen bereitstellen
+- `alarms`: Zeitgesteuerte Auto-Backups ausführen
 
 ## Datenhaltung und Datenschutz
 
-- Eintraege und Themen: `IndexedDB` (lokal im Firefox-Profil)
+- Einträge und Themen: `IndexedDB` (lokal im Firefox-Profil)
 - Einstellungen und Backups: `storage.local`
-- Keine Uebertragung an externe Server durch dieses Add-on
+- Keine Übertragung an externe Server durch dieses Add-on
 
 ## Projektstruktur
 
@@ -115,7 +115,7 @@ Das Add-on nutzt folgende Firefox-Berechtigungen:
 ## Mitwirken
 
 Issues und Pull Requests sind willkommen.  
-Bitte bei groesseren Aenderungen kurz Ziel und Ansatz im Issue beschreiben.
+Bitte bei größeren Änderungen kurz Ziel und Ansatz im Issue beschreiben.
 
 ## Lizenz
 
