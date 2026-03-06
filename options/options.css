@@ -1,0 +1,159 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --border: #d3dceb;
+  --text: #1a2435;
+  --muted: #5d6f8e;
+  --accent: #2d63d0;
+  --danger: #bd3f3f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1624;
+    --surface: #1a2436;
+    --border: #33455f;
+    --text: #e8eef9;
+    --muted: #a8bad7;
+    --accent: #6ea2ff;
+    --danger: #ff7b7b;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.app {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+h1 {
+  margin: 0 0 14px;
+  font-size: 24px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.row input[type="number"] {
+  width: 120px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 8px;
+}
+
+.checkbox {
+  justify-content: flex-start;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.btn {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.btn--primary {
+  border-color: color-mix(in oklab, var(--accent) 58%, var(--border));
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--danger {
+  border-color: color-mix(in oklab, var(--danger) 58%, var(--border));
+  background: var(--danger);
+  color: #fff;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.backup {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.backup__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.backup__meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.backup__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.status--error {
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--border));
+}

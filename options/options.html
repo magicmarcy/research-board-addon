@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Research Board - Einstellungen</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="app">
+    <h1>Research Board - Einstellungen</h1>
+
+    <section class="card">
+      <h2>Auto-Backup</h2>
+      <p class="hint">Backups werden lokal im Browserprofil gespeichert. Bei unveränderten Daten wird kein neuer Stand angelegt.</p>
+      <form id="settingsForm" class="form">
+        <label class="row checkbox">
+          <input id="enabledInput" type="checkbox" />
+          <span>Auto-Backup aktivieren</span>
+        </label>
+
+        <label class="row">
+          <span>Intervall (Minuten)</span>
+          <input id="intervalInput" type="number" min="5" max="10080" step="1" />
+        </label>
+
+        <div class="actions">
+          <button id="saveSettingsBtn" class="btn btn--primary" type="submit">Einstellungen speichern</button>
+          <button id="runBackupBtn" class="btn" type="button">Jetzt sichern</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="header-row">
+        <h2>Gespeicherte Backups</h2>
+        <button id="deleteAllBtn" class="btn btn--danger" type="button">Alle löschen</button>
+      </div>
+      <div id="backupList" class="list"></div>
+    </section>
+
+    <div id="status" class="status">Lade Einstellungen ...</div>
+  </main>
+
+  <script src="../shared/compat.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

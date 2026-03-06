@@ -1,0 +1,474 @@
+/*
+  Research Board DB (IndexedDB)
+  Stores:
+    - topics: { id, title, description?, color?, createdAt, updatedAt, archived, position }
+    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, createdAt, updatedAt, position }
+*/
+
+(() => {
+  const DB_NAME = 'research_board_db';
+  const DB_VERSION = 1;
+  const MIN_POSITION = 0;
+  const MAX_POSITION = Number.MAX_SAFE_INTEGER;
+
+  const nowIso = () => new Date().toISOString();
+
+  const uuid = () => {
+    try {
+      if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    } catch (_) {}
+    // Fallback: not cryptographically strong, but fine for local IDs.
+    return 'id-' + Math.random().toString(16).slice(2) + '-' + Date.now().toString(16);
+  };
+
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+
+        if (!db.objectStoreNames.contains('topics')) {
+          const topics = db.createObjectStore('topics', { keyPath: 'id' });
+          topics.createIndex('by_position', 'position', { unique: false });
+          topics.createIndex('by_updatedAt', 'updatedAt', { unique: false });
+          topics.createIndex('by_archived_position', ['archived', 'position'], { unique: false });
+          topics.createIndex('by_title', 'title', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains('entries')) {
+          const entries = db.createObjectStore('entries', { keyPath: 'id' });
+          entries.createIndex('by_topic', 'topicId', { unique: false });
+          entries.createIndex('by_topic_position', ['topicId', 'position'], { unique: false });
+          entries.createIndex('by_updatedAt', 'updatedAt', { unique: false });
+          entries.createIndex('by_type', 'type', { unique: false });
+          entries.createIndex('by_url', 'url', { unique: false });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function withTx(db, stores, mode, fn) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(stores, mode);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+      fn(tx);
+    });
+  }
+
+  function reqToPromise(req) {
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function isDataError(error) {
+    if (!error) return false;
+    if (error.name === 'DataError') return true;
+    const msg = String(error.message || error);
+    return /does not meet requirements|Data provided/i.test(msg);
+  }
+
+  async function getAllTopicsFallback(db, includeArchived) {
+    const tx = db.transaction(['topics'], 'readonly');
+    const store = tx.objectStore('topics');
+    const all = await reqToPromise(store.getAll());
+    return all
+      .filter((t) => includeArchived ? true : !t?.archived)
+      .sort((a, b) => {
+        if (!!a?.archived !== !!b?.archived) return (a?.archived ? 1 : 0) - (b?.archived ? 1 : 0);
+        const ap = Number.isFinite(a?.position) ? a.position : Number.MAX_SAFE_INTEGER;
+        const bp = Number.isFinite(b?.position) ? b.position : Number.MAX_SAFE_INTEGER;
+        if (ap !== bp) return ap - bp;
+        return String(a?.title || '').localeCompare(String(b?.title || ''));
+      });
+  }
+
+  async function getEntriesByTopicFallback(db, topicId) {
+    if (!topicId) return [];
+    const tx = db.transaction(['entries'], 'readonly');
+    const store = tx.objectStore('entries');
+    const all = await reqToPromise(store.getAll());
+    return all
+      .filter((e) => e?.topicId === topicId)
+      .sort((a, b) => {
+        const ap = Number.isFinite(a?.position) ? a.position : Number.MAX_SAFE_INTEGER;
+        const bp = Number.isFinite(b?.position) ? b.position : Number.MAX_SAFE_INTEGER;
+        if (ap !== bp) return ap - bp;
+        return String(a?.createdAt || '').localeCompare(String(b?.createdAt || ''));
+      });
+  }
+
+  async function getNextTopicPosition(db, archived = false) {
+    try {
+      const tx = db.transaction(['topics'], 'readonly');
+      const store = tx.objectStore('topics');
+      const idx = store.index('by_archived_position');
+      const range = IDBKeyRange.bound([!!archived, MIN_POSITION], [!!archived, MAX_POSITION]);
+
+      return await new Promise((resolve, reject) => {
+        const cursorReq = idx.openCursor(range, 'prev');
+        cursorReq.onsuccess = () => {
+          const cur = cursorReq.result;
+          if (!cur) {
+            resolve(1);
+            return;
+          }
+          const pos = Number.isFinite(cur.value?.position) ? cur.value.position : 0;
+          resolve(pos + 1);
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+    } catch (error) {
+      if (!isDataError(error)) throw error;
+      const topics = await getAllTopicsFallback(db, true);
+      let maxPos = 0;
+      for (const t of topics) {
+        if (!!t?.archived !== !!archived) continue;
+        if (Number.isFinite(t?.position) && t.position > maxPos) maxPos = t.position;
+      }
+      return maxPos + 1;
+    }
+  }
+
+  async function getNextEntryPosition(db, topicId) {
+    if (!topicId) return 1;
+    try {
+      const tx = db.transaction(['entries'], 'readonly');
+      const store = tx.objectStore('entries');
+      const idx = store.index('by_topic_position');
+      const range = IDBKeyRange.bound([topicId, MIN_POSITION], [topicId, MAX_POSITION]);
+
+      return await new Promise((resolve, reject) => {
+        const cursorReq = idx.openCursor(range, 'prev');
+        cursorReq.onsuccess = () => {
+          const cur = cursorReq.result;
+          if (!cur) {
+            resolve(1);
+            return;
+          }
+          const pos = Number.isFinite(cur.value?.position) ? cur.value.position : 0;
+          resolve(pos + 1);
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+    } catch (error) {
+      if (!isDataError(error)) throw error;
+      const entries = await getEntriesByTopicFallback(db, topicId);
+      const last = entries[entries.length - 1];
+      const lastPos = Number.isFinite(last?.position) ? last.position : 0;
+      return lastPos + 1;
+    }
+  }
+
+  async function getAllTopics(db, { includeArchived = false } = {}) {
+    try {
+      const tx = db.transaction(['topics'], 'readonly');
+      const store = tx.objectStore('topics');
+      const idx = store.index('by_archived_position');
+      const archivedVals = includeArchived ? [false, true] : [false];
+      const results = [];
+
+      for (const archived of archivedVals) {
+        const range = IDBKeyRange.bound([archived, MIN_POSITION], [archived, MAX_POSITION]);
+        await new Promise((resolve, reject) => {
+          const cursorReq = idx.openCursor(range, 'next');
+          cursorReq.onsuccess = () => {
+            const cur = cursorReq.result;
+            if (!cur) {
+              resolve();
+              return;
+            }
+            results.push(cur.value);
+            cur.continue();
+          };
+          cursorReq.onerror = () => reject(cursorReq.error);
+        });
+      }
+
+      return results;
+    } catch (error) {
+      if (!isDataError(error)) throw error;
+      return getAllTopicsFallback(db, includeArchived);
+    }
+  }
+
+  async function getTopic(db, id) {
+    const tx = db.transaction(['topics'], 'readonly');
+    const store = tx.objectStore('topics');
+    return reqToPromise(store.get(id));
+  }
+
+  async function addTopic(db, { title, description = '', color = '' } = {}) {
+    const createdAt = nowIso();
+    const topic = {
+      id: uuid(),
+      title: (title ?? 'Neues Thema').trim() || 'Neues Thema',
+      description: description ?? '',
+      color: color ?? '',
+      archived: false,
+      createdAt,
+      updatedAt: createdAt,
+      position: await getNextTopicPosition(db, false)
+    };
+
+    await withTx(db, ['topics'], 'readwrite', (tx) => {
+      tx.objectStore('topics').add(topic);
+    });
+
+    return topic;
+  }
+
+  async function updateTopic(db, id, patch) {
+    const tx = db.transaction(['topics'], 'readwrite');
+    const store = tx.objectStore('topics');
+    const cur = await reqToPromise(store.get(id));
+    if (!cur) throw new Error('Topic not found');
+
+    const updated = {
+      ...cur,
+      ...patch,
+      updatedAt: nowIso()
+    };
+
+    await reqToPromise(store.put(updated));
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    return updated;
+  }
+
+  async function deleteTopic(db, id) {
+    // Delete topic + its entries in one transaction.
+    const tx = db.transaction(['topics', 'entries'], 'readwrite');
+    const topics = tx.objectStore('topics');
+    const entries = tx.objectStore('entries');
+    const idx = entries.index('by_topic');
+
+    await new Promise((resolve, reject) => {
+      const cursorReq = idx.openCursor(IDBKeyRange.only(id));
+      cursorReq.onsuccess = () => {
+        const cur = cursorReq.result;
+        if (cur) {
+          cur.delete();
+          cur.continue();
+        } else {
+          resolve();
+        }
+      };
+      cursorReq.onerror = () => reject(cursorReq.error);
+    });
+
+    await reqToPromise(topics.delete(id));
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function getEntriesByTopic(db, topicId) {
+    if (!topicId) return [];
+    try {
+      const tx = db.transaction(['entries'], 'readonly');
+      const store = tx.objectStore('entries');
+      const idx = store.index('by_topic_position');
+      const range = IDBKeyRange.bound([topicId, MIN_POSITION], [topicId, MAX_POSITION]);
+
+      const results = [];
+      await new Promise((resolve, reject) => {
+        const cursorReq = idx.openCursor(range, 'next');
+        cursorReq.onsuccess = () => {
+          const cur = cursorReq.result;
+          if (!cur) {
+            resolve();
+            return;
+          }
+          results.push(cur.value);
+          cur.continue();
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+      return results;
+    } catch (error) {
+      if (!isDataError(error)) throw error;
+      return getEntriesByTopicFallback(db, topicId);
+    }
+  }
+
+  async function getAllEntries(db) {
+    const tx = db.transaction(['entries'], 'readonly');
+    const store = tx.objectStore('entries');
+    return reqToPromise(store.getAll());
+  }
+
+  async function addEntry(db, topicId, entryInput) {
+    const createdAt = nowIso();
+    const entry = {
+      id: uuid(),
+      topicId,
+      type: entryInput.type,
+      title: entryInput.title ?? '',
+      url: entryInput.url ?? '',
+      sourcePageTitle: entryInput.sourcePageTitle ?? '',
+      sourcePageUrl: entryInput.sourcePageUrl ?? '',
+      linkText: entryInput.linkText ?? '',
+      excerpt: entryInput.excerpt ?? '',
+      note: entryInput.note ?? '',
+      createdAt,
+      updatedAt: createdAt,
+      position: typeof entryInput.position === 'number' ? entryInput.position : await getNextEntryPosition(db, topicId)
+    };
+
+    await withTx(db, ['entries'], 'readwrite', (tx) => {
+      tx.objectStore('entries').add(entry);
+    });
+
+    return entry;
+  }
+
+  async function updateEntry(db, id, patch) {
+    const tx = db.transaction(['entries'], 'readwrite');
+    const store = tx.objectStore('entries');
+    const cur = await reqToPromise(store.get(id));
+    if (!cur) throw new Error('Entry not found');
+
+    const updated = {
+      ...cur,
+      ...patch,
+      updatedAt: nowIso()
+    };
+
+    await reqToPromise(store.put(updated));
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+
+    return updated;
+  }
+
+  async function deleteEntry(db, id) {
+    await withTx(db, ['entries'], 'readwrite', (tx) => {
+      tx.objectStore('entries').delete(id);
+    });
+  }
+
+  async function reorderTopics(db, orderedTopicIds) {
+    const tx = db.transaction(['topics'], 'readwrite');
+    const store = tx.objectStore('topics');
+
+    for (let i = 0; i < orderedTopicIds.length; i++) {
+      const id = orderedTopicIds[i];
+      const topic = await reqToPromise(store.get(id));
+      if (!topic) continue;
+      topic.position = i + 1;
+      topic.updatedAt = nowIso();
+      store.put(topic);
+    }
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function reorderEntries(db, topicId, orderedEntryIds) {
+    const tx = db.transaction(['entries'], 'readwrite');
+    const store = tx.objectStore('entries');
+
+    for (let i = 0; i < orderedEntryIds.length; i++) {
+      const id = orderedEntryIds[i];
+      const entry = await reqToPromise(store.get(id));
+      if (!entry) continue;
+      if (entry.topicId !== topicId) continue;
+      entry.position = i + 1;
+      entry.updatedAt = nowIso();
+      store.put(entry);
+    }
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function clearAll(db) {
+    const tx = db.transaction(['topics', 'entries'], 'readwrite');
+    tx.objectStore('topics').clear();
+    tx.objectStore('entries').clear();
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function exportAll(db) {
+    const topics = await getAllTopics(db, { includeArchived: true });
+    const entries = await (async () => {
+      const tx = db.transaction(['entries'], 'readonly');
+      const store = tx.objectStore('entries');
+      return reqToPromise(store.getAll());
+    })();
+
+    const settings = await ext.storage.local.get({ lastTopicId: null, includeArchived: false });
+
+    return {
+      schemaVersion: 1,
+      exportedAt: nowIso(),
+      app: { name: 'Research Board (Local)', version: '1.0.0' },
+      settings,
+      topics,
+      entries
+    };
+  }
+
+  async function exportTopic(db, topicId) {
+    const topic = await getTopic(db, topicId);
+    if (!topic) throw new Error('Topic not found');
+    const entries = await getEntriesByTopic(db, topicId);
+
+    return {
+      schemaVersion: 1,
+      exportedAt: nowIso(),
+      app: { name: 'Research Board (Local)', version: '1.0.0' },
+      topic,
+      entries
+    };
+  }
+
+  // Expose
+  globalThis.rbDB = {
+    openDb,
+    uuid,
+    nowIso,
+    getAllTopics,
+    getTopic,
+    addTopic,
+    updateTopic,
+    deleteTopic,
+    getEntriesByTopic,
+    getAllEntries,
+    addEntry,
+    updateEntry,
+    deleteEntry,
+    reorderTopics,
+    reorderEntries,
+    clearAll,
+    exportAll,
+    exportTopic
+  };
+})();

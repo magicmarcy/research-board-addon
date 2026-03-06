@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Research Board</title>
+  <link rel="stylesheet" href="sidebar.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="topbar__row">
+        <button id="navBackBtn" class="iconbtn hidden" title="Zurück" aria-label="Zurück">
+          <span class="icon">←</span>
+        </button>
+        <div class="topbar__title" id="topTitle">Research Board</div>
+        <div class="topbar__spacer"></div>
+        <div class="topbar__actions" id="topbarActions">
+          <button id="qaCreateTopicBtn" class="iconbtn btn--primary" title="Thema anlegen" aria-label="Thema anlegen"><span class="icon">＋</span></button>
+          <button id="qaExportBtn" class="iconbtn" title="Export" aria-label="Export"><span class="icon">⤴</span></button>
+          <button id="qaImportBtn" class="iconbtn" title="Import" aria-label="Import"><span class="icon">⤵</span></button>
+          <button id="qaArchiveToggleBtn" class="iconbtn" title="Archiv anzeigen" aria-label="Archiv anzeigen"><span class="icon">🗃</span></button>
+        </div>
+        <div class="topbar__actions hidden" id="topicbarActions">
+          <button id="qaTopicExportBtn" class="iconbtn" title="Thema exportieren" aria-label="Thema exportieren"><span class="icon">⤴</span></button>
+          <button id="qaTopicEditBtn" class="iconbtn" title="Thema bearbeiten" aria-label="Thema bearbeiten"><span class="icon">✎</span></button>
+          <button id="qaTopicArchiveBtn" class="iconbtn" title="Thema archivieren" aria-label="Thema archivieren"><span class="icon">🗃</span></button>
+          <button id="qaTopicDeleteBtn" class="iconbtn" title="Thema löschen" aria-label="Thema löschen"><span class="icon">✕</span></button>
+        </div>
+        <button id="themeToggleBtn" class="iconbtn" title="Theme wechseln" aria-label="Theme wechseln">
+          <span class="icon">☼</span>
+        </button>
+      </div>
+      <div class="topbar__row">
+        <div class="searchwrap">
+          <span class="searchwrap__icon">⌕</span>
+          <input id="searchInput" class="search" type="search" placeholder="Suchen…" autocomplete="off" />
+        </div>
+        <button id="primaryBtn" class="btn btn--primary">Neues Thema</button>
+      </div>
+    </header>
+
+    <main class="main" id="main">
+      <!-- Dynamic content -->
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- Menus / Modals -->
+    <div id="dropdown" class="dropdown hidden" role="menu"></div>
+
+    <div id="modalOverlay" class="overlay hidden" aria-hidden="true">
+      <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal__header">
+          <div id="modalTitle" class="modal__title">Modal</div>
+          <button id="modalClose" class="iconbtn" aria-label="Schließen"><span class="icon">✕</span></button>
+        </div>
+        <div id="modalBody" class="modal__body"></div>
+        <div id="modalFooter" class="modal__footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared/compat.js"></script>
+  <script src="../shared/db.js"></script>
+  <script src="sidebar.js"></script>
+</body>
+</html>

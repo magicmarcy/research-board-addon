@@ -1,0 +1,13 @@
+# Local export data
+export/
+
+# Build artifacts
+web-ect-artifacts/
+web-ext-artifacts/
+
+# Local extension id files
+.web.extension-id
+.web-extension-id
+
+# Local manifest with private add-on id/signing setup
+manifest.json
