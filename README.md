@@ -10,6 +10,14 @@ Aktuelle Version: **1.3.0**
 - Themen verwalten: anlegen, bearbeiten, sortieren, archivieren, löschen
 - Einträge erfassen: Link, Textzitat, Notiz, aktuelle Seite
 - Capture per Kontextmenü: Seite, Link oder Auswahl direkt in ein Thema speichern
+- Konfigurierbare URL-Umschreibung in den Einstellungen:
+  - Quell-URL-Prefix definieren
+  - Wert per Regex aus dem Seitentitel extrahieren
+  - Ziel-URL über Vorlage mit Platzhalter `{value}` aufbauen
+  - Anwendung bei Kontextmenü-Capture und `+ Aktuelle Seite`
+- Notiz-/Textfeld-Vergrößerung per `⤢`:
+  - Externes, separates Popup-Fenster zum Bearbeiten langer Inhalte
+  - Popup-`Speichern` übernimmt den Text und speichert den Eintrag direkt
 - Drag-and-Drop-Unterstützung für Inhalte und Sortierung
 - Suche in Themen und Einträgen
 - Import/Export als JSON:
@@ -80,6 +88,7 @@ Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
    - Oder per Drag-and-Drop in die Dropzone ziehen
 4. Daten bei Bedarf exportieren/importieren (JSON).
 5. Auto-Backups in den Add-on-Einstellungen konfigurieren.
+6. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL).
 
 ## Berechtigungen
 
@@ -106,7 +115,11 @@ Das Add-on nutzt folgende Firefox-Berechtigungen:
 |  |- db.js
 |  |- auto-backup.js
 |  |- compat.js
+|  |- url-transform.js
 |- sidebar/
+|  |- note-popup.html
+|  |- note-popup.css
+|  |- note-popup.js
 |- options/
 |- icons/
 `- web-ext-artifacts/
