@@ -82,6 +82,25 @@ h2 {
   padding: 7px 8px;
 }
 
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 8px;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .checkbox {
   justify-content: flex-start;
 }

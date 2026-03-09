@@ -1114,10 +1114,12 @@
       toast('Kein aktiver Tab');
       return;
     }
+    const transformConfig = await rbUrlTransform.getConfig();
+    const transformed = rbUrlTransform.applyToUrl(tab.url, tab.title || '', transformConfig);
     await rbDB.addEntry(state.db, state.currentTopicId, {
       type: 'link',
-      url: tab.url,
-      title: tab.title || tab.url,
+      url: transformed.url,
+      title: tab.title || transformed.url,
       note: '',
       sourcePageUrl: tab.url,
       sourcePageTitle: tab.title || ''

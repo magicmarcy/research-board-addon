@@ -6,6 +6,11 @@
     settingsForm: document.getElementById('settingsForm'),
     enabledInput: document.getElementById('enabledInput'),
     intervalInput: document.getElementById('intervalInput'),
+    transformForm: document.getElementById('transformForm'),
+    transformEnabledInput: document.getElementById('transformEnabledInput'),
+    sourceUrlPatternInput: document.getElementById('sourceUrlPatternInput'),
+    titleIdRegexInput: document.getElementById('titleIdRegexInput'),
+    targetUrlTemplateInput: document.getElementById('targetUrlTemplateInput'),
     runBackupBtn: document.getElementById('runBackupBtn'),
     deleteAllBtn: document.getElementById('deleteAllBtn'),
     backupList: document.getElementById('backupList'),
@@ -43,6 +48,14 @@
     els.enabledInput.checked = !!config.enabled;
     els.intervalInput.value = String(config.intervalMinutes || 60);
     els.intervalInput.disabled = !config.enabled;
+  }
+
+  function setTransformFormState(config) {
+    const c = rbUrlTransform.normalizeConfig(config);
+    els.transformEnabledInput.checked = !!c.enabled;
+    els.sourceUrlPatternInput.value = c.sourceUrlPattern;
+    els.titleIdRegexInput.value = c.titleIdRegex;
+    els.targetUrlTemplateInput.value = c.targetUrlTemplate;
   }
 
   function backupReasonLabel(reason) {
@@ -134,6 +147,8 @@
     const state = await requestState();
     setFormState(state.config || {});
     renderBackups(state.backups || []);
+    const transformConfig = await rbUrlTransform.getConfig();
+    setTransformFormState(transformConfig);
   }
 
   els.enabledInput.addEventListener('change', () => {
@@ -177,6 +192,28 @@
       if (!response?.ok) throw new Error(response?.error || 'Backups konnten nicht gelöscht werden.');
       renderBackups([]);
       setStatus('Alle Backups gelöscht.');
+    } catch (error) {
+      setStatus(error.message || String(error), true);
+    }
+  });
+
+  els.transformForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const patch = {
+      enabled: els.transformEnabledInput.checked,
+      sourceUrlPattern: els.sourceUrlPatternInput.value,
+      titleIdRegex: els.titleIdRegexInput.value,
+      targetUrlTemplate: els.targetUrlTemplateInput.value
+    };
+    const check = rbUrlTransform.validateConfig(patch);
+    if (!check.ok) {
+      setStatus(check.error || 'URL-Umschreibung ist ungültig.', true);
+      return;
+    }
+    try {
+      const saved = await rbUrlTransform.setConfig(check.config);
+      setTransformFormState(saved);
+      setStatus('URL-Umschreibung gespeichert.');
     } catch (error) {
       setStatus(error.message || String(error), true);
     }

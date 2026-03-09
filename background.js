@@ -123,14 +123,16 @@
 
     const tabUrl = tab?.url || info?.pageUrl || '';
     const tabTitle = tab?.title || '';
+    const transformConfig = await rbUrlTransform.getConfig();
 
     let entry;
 
     if (info?.linkUrl) {
+      const transformed = rbUrlTransform.applyToUrl(info.linkUrl, tabTitle, transformConfig);
       entry = {
         type: 'link',
-        url: info.linkUrl,
-        title: normalizeTitle(info.linkText || info.linkUrl),
+        url: transformed.url,
+        title: normalizeTitle(info.linkText || transformed.url),
         linkText: info.linkText || '',
         sourcePageUrl: tabUrl,
         sourcePageTitle: tabTitle
@@ -145,10 +147,11 @@
         sourcePageTitle: tabTitle
       };
     } else {
+      const transformed = rbUrlTransform.applyToUrl(tabUrl, tabTitle, transformConfig);
       entry = {
         type: 'link',
-        url: tabUrl,
-        title: normalizeTitle(tabTitle || tabUrl),
+        url: transformed.url,
+        title: normalizeTitle(tabTitle || transformed.url),
         sourcePageUrl: tabUrl,
         sourcePageTitle: tabTitle
       };

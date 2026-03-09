@@ -32,6 +32,37 @@
     </section>
 
     <section class="card">
+      <h2>URL-Umschreibung</h2>
+      <p class="hint">Erkennt bestimmte Quell-URLs und baut daraus eine neue Ziel-URL. Ein Wert wird dabei per Regex aus dem Seitentitel gelesen.</p>
+      <form id="transformForm" class="form">
+        <label class="row checkbox">
+          <input id="transformEnabledInput" type="checkbox" />
+          <span>URL-Umschreibung aktivieren</span>
+        </label>
+
+        <label class="field">
+          <span>Quell-URL (Prefix)</span>
+          <input id="sourceUrlPatternInput" type="text" placeholder="https://beispiel.de/main.xhtml" />
+        </label>
+
+        <label class="field">
+          <span>Wert aus Titel (Regex)</span>
+          <input id="titleIdRegexInput" type="text" placeholder="ID=(\\d+)" />
+        </label>
+
+        <label class="field">
+          <span>Ziel-URL-Vorlage</span>
+          <input id="targetUrlTemplateInput" type="text" placeholder="https://zielsystem.de/?ref={value}" />
+          <span class="field-hint">Platzhalter für den extrahierten Wert: <code>{value}</code></span>
+        </label>
+
+        <div class="actions">
+          <button class="btn btn--primary" type="submit">Umschreibung speichern</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
       <div class="header-row">
         <h2>Gespeicherte Backups</h2>
         <button id="deleteAllBtn" class="btn btn--danger" type="button">Alle löschen</button>
@@ -43,6 +74,7 @@
   </main>
 
   <script src="../shared/compat.js"></script>
+  <script src="../shared/url-transform.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
