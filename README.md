@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.3.0**
+Aktuelle Version: **1.4.0**
 
 ## Features
 
