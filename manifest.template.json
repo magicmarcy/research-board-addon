@@ -26,6 +26,7 @@
     "scripts": [
       "shared/compat.js",
       "shared/db.js",
+      "shared/url-transform.js",
       "shared/auto-backup.js",
       "background.js"
     ]
