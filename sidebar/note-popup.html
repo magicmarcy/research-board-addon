@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Notiz bearbeiten</title>
+  <link rel="stylesheet" href="note-popup.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1 id="popupTitle" class="title">Notiz bearbeiten</h1>
+      <button id="closeBtn" class="iconbtn" aria-label="Schließen">✕</button>
+    </header>
+    <main class="main">
+      <textarea id="editor" class="editor" spellcheck="true"></textarea>
+    </main>
+    <footer class="footer">
+      <button id="cancelBtn" class="btn btn--ghost">Abbrechen</button>
+      <button id="applyBtn" class="btn btn--primary">Speichern</button>
+    </footer>
+  </div>
+  <script src="note-popup.js"></script>
+</body>
+</html>

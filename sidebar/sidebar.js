@@ -225,6 +225,94 @@
     ui.modalOverlay.setAttribute('aria-hidden', 'false');
   }
 
+  function makeZoomableTextarea(textarea, popupTitle) {
+    const wrap = el('div', { class: 'textarea-zoom-wrap' }, [textarea]);
+    const zoomBtn = el('button', {
+      type: 'button',
+      class: 'textarea-zoom-btn',
+      title: 'Im Popup öffnen',
+      'aria-label': 'Im Popup öffnen'
+    }, ['⤢']);
+
+    zoomBtn.addEventListener('click', () => {
+      openTextareaPopup({
+        title: popupTitle || 'Text bearbeiten',
+        sourceTextarea: textarea
+      });
+    });
+
+    wrap.appendChild(zoomBtn);
+    return wrap;
+  }
+
+  function openTextareaPopup({ title, sourceTextarea }) {
+    if (!sourceTextarea) return;
+
+    const channelId = `note-popup-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const popupTitle = title || 'Text bearbeiten';
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const url = ext.runtime.getURL(
+      `sidebar/note-popup.html?channel=${encodeURIComponent(channelId)}&title=${encodeURIComponent(popupTitle)}&theme=${encodeURIComponent(theme)}`
+    );
+
+    const channel = new BroadcastChannel(channelId);
+    const popup = window.open(url, '_blank', 'popup=yes,width=980,height=760,resizable=yes,scrollbars=yes');
+    if (!popup) {
+      channel.close();
+      toast('Popup wurde blockiert');
+      return;
+    }
+
+    const isTextareaInModal = !!(ui.modalBody && ui.modalBody.contains(sourceTextarea));
+    const modalWasVisible = !!(ui.modalOverlay && !ui.modalOverlay.classList.contains('hidden'));
+    const modalTemporarilyHidden = isTextareaInModal && modalWasVisible;
+    if (modalTemporarilyHidden) {
+      ui.modalOverlay.classList.add('hidden');
+      ui.modalOverlay.setAttribute('aria-hidden', 'true');
+    }
+
+    let closed = false;
+    const cleanup = ({ restoreModal = false } = {}) => {
+      if (closed) return;
+      closed = true;
+      clearInterval(closeWatchId);
+      channel.close();
+      if (restoreModal && modalTemporarilyHidden) {
+        ui.modalOverlay.classList.remove('hidden');
+        ui.modalOverlay.setAttribute('aria-hidden', 'false');
+      }
+    };
+
+    const closeWatchId = setInterval(() => {
+      if (!popup.closed) return;
+      cleanup();
+    }, 500);
+
+    channel.onmessage = (ev) => {
+      const msg = ev?.data;
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'popupReady') {
+        channel.postMessage({ type: 'initValue', value: sourceTextarea.value || '' });
+        return;
+      }
+      if (msg.type === 'apply') {
+        sourceTextarea.value = String(msg.value ?? '');
+        sourceTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const saveBtn = ui.modalFooter?.querySelector('.btn--primary');
+        if (saveBtn) {
+          saveBtn.click();
+          cleanup({ restoreModal: false });
+          return;
+        }
+        cleanup({ restoreModal: false });
+        return;
+      }
+      if (msg.type === 'close') {
+        cleanup();
+      }
+    };
+  }
+
   function closeModal() {
     ui.modalOverlay.classList.add('hidden');
     ui.modalOverlay.setAttribute('aria-hidden', 'true');
@@ -946,7 +1034,7 @@
       titleInput = el('input', { class: 'input', placeholder: 'Kurztitel (optional)', value: preset.title || '' });
       excerptInput = el('textarea', { class: 'textarea', placeholder: 'Textauszug', value: preset.excerpt || '' });
       fields.push(
-        el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Textauszug']), excerptInput]),
+        el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Textauszug']), makeZoomableTextarea(excerptInput, 'Textauszug bearbeiten')]),
         el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Titel (optional)']), titleInput])
       );
     }
@@ -958,13 +1046,13 @@
       noteInput.value = preset.excerpt || preset.note || '';
       fields.push(
         el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Titel (optional)']), titleInput]),
-        el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Notiz']), noteInput])
+        el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Notiz']), makeZoomableTextarea(noteInput, 'Notiz bearbeiten')])
       );
     } else if (type === 'link') {
       fields.push(
         el('div', { class: 'field', style: 'margin-top:10px;' }, [
           el('div', { class: 'label' }, ['Notiz (optional)']),
-          noteInput
+          makeZoomableTextarea(noteInput, 'Notiz bearbeiten')
         ])
       );
     }
@@ -1072,14 +1160,14 @@
       entry.type !== 'link'
         ? el('div', { class: 'field', style: 'margin-top:10px;' }, [
             el('div', { class: 'label' }, [entry.type === 'quote' ? 'Textauszug' : 'Notiztext']),
-            excerptInput
+            makeZoomableTextarea(excerptInput, entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten')
           ])
         : null,
 
       entry.type === 'link'
         ? el('div', { class: 'field', style: 'margin-top:10px;' }, [
             el('div', { class: 'label' }, ['Optionale Notiz']),
-            noteInput
+            makeZoomableTextarea(noteInput, 'Notiz bearbeiten')
           ])
         : null,
 

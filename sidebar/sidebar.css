@@ -719,6 +719,45 @@ select {
   resize: vertical;
 }
 
+.textarea-zoom-wrap {
+  position: relative;
+}
+
+.textarea-zoom-wrap .textarea {
+  width: 100%;
+  padding-right: 36px;
+}
+
+.textarea-zoom-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, var(--accent));
+  background: color-mix(in oklab, var(--surface) 82%, var(--surface2));
+  color: color-mix(in oklab, var(--text) 78%, var(--muted));
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.textarea-zoom-wrap:hover .textarea-zoom-btn,
+.textarea-zoom-wrap:focus-within .textarea-zoom-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.textarea-zoom-btn:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent-weak) 45%, var(--surface));
+}
+
 .modal .textarea {
   min-height: 210px;
 }
