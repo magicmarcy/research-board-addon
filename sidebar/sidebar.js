@@ -492,10 +492,26 @@
 
   function renderSidebarFooter() {
     return el('div', { class: 'sidebar-footer' }, [
-      el('button', { class: 'link-subtle', onclick: showHelpModal }, ['Hilfe']),
+      el('div', { class: 'sidebar-footer__links' }, [
+        el('button', { class: 'link-subtle', onclick: showHelpModal }, ['Hilfe']),
+        el('button', { class: 'link-subtle', onclick: openOptionsPage }, ['Einstellungen'])
+      ]),
       el('span', { class: 'footer-signature' }, ['by magicmarcy']),
       el('button', { class: 'link-danger', onclick: showDangerResetModal }, ['Alle Daten löschen'])
     ]);
+  }
+
+  async function openOptionsPage() {
+    try {
+      if (typeof ext.runtime?.openOptionsPage === 'function') {
+        await ext.runtime.openOptionsPage();
+        return;
+      }
+      throw new Error('openOptionsPage unavailable');
+    } catch (error) {
+      console.error(error);
+      toast('Einstellungen konnten nicht geöffnet werden');
+    }
   }
 
   function renderTopicsView() {

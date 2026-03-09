@@ -914,6 +914,12 @@ select {
   background: linear-gradient(to top, var(--bg) 72%, rgba(0, 0, 0, 0));
 }
 
+.sidebar-footer__links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .link-subtle {
   border: none;
   background: transparent;
