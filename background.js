@@ -1,6 +1,7 @@
 (() => {
   const MAX_TOPICS_IN_MENU = 15;
   let pendingCapture = null;
+  const MENU_CONTEXTS = ['page', 'frame', 'selection', 'link'];
 
   const safe = (p) => p.catch(() => undefined);
 
@@ -42,21 +43,21 @@
     ext.contextMenus.create({
       id: 'rb_root',
       title: 'Zum Research Board hinzufügen',
-      contexts: ['page', 'selection', 'link']
+      contexts: MENU_CONTEXTS
     });
 
     ext.contextMenus.create({
       id: 'rb_open_sidebar',
       parentId: 'rb_root',
       title: 'In Sidebar auswählen…',
-      contexts: ['page', 'selection', 'link']
+      contexts: MENU_CONTEXTS
     });
 
     ext.contextMenus.create({
       id: 'rb_sep1',
       parentId: 'rb_root',
       type: 'separator',
-      contexts: ['page', 'selection', 'link']
+      contexts: MENU_CONTEXTS
     });
 
     const topics = await getMenuTopics(db);
@@ -66,7 +67,7 @@
         parentId: 'rb_root',
         title: '(Noch keine Themen — Sidebar öffnen)',
         enabled: false,
-        contexts: ['page', 'selection', 'link']
+        contexts: MENU_CONTEXTS
       });
       return;
     }
@@ -76,7 +77,7 @@
         id: `rb_topic:${t.id}`,
         parentId: 'rb_root',
         title: t.title,
-        contexts: ['page', 'selection', 'link']
+        contexts: MENU_CONTEXTS
       });
     }
 
@@ -88,7 +89,7 @@
         parentId: 'rb_root',
         title: `(+${allTopics.length - MAX_TOPICS_IN_MENU} weitere — „In Sidebar auswählen…“ nutzen)`,
         enabled: false,
-        contexts: ['page', 'selection', 'link']
+        contexts: MENU_CONTEXTS
       });
     }
   }
@@ -122,6 +123,8 @@
     await ext.storage.local.set({ lastTopicId: topicId });
 
     const tabUrl = tab?.url || info?.pageUrl || '';
+    const frameUrl = info?.frameUrl || '';
+    const contextUrl = frameUrl || tabUrl;
     const tabTitle = tab?.title || '';
     const transformConfig = await rbUrlTransform.getConfig();
 
@@ -134,7 +137,7 @@
         url: transformed.url,
         title: normalizeTitle(info.linkText || transformed.url),
         linkText: info.linkText || '',
-        sourcePageUrl: tabUrl,
+        sourcePageUrl: contextUrl,
         sourcePageTitle: tabTitle
       };
     } else if (info?.selectionText) {
@@ -143,16 +146,16 @@
         type: 'quote',
         excerpt: ex,
         title: normalizeTitle(ex, 60),
-        sourcePageUrl: tabUrl,
+        sourcePageUrl: contextUrl,
         sourcePageTitle: tabTitle
       };
     } else {
-      const transformed = rbUrlTransform.applyToUrl(tabUrl, tabTitle, transformConfig);
+      const transformed = rbUrlTransform.applyToUrl(contextUrl, tabTitle, transformConfig);
       entry = {
         type: 'link',
         url: transformed.url,
         title: normalizeTitle(tabTitle || transformed.url),
-        sourcePageUrl: tabUrl,
+        sourcePageUrl: contextUrl,
         sourcePageTitle: tabTitle
       };
     }

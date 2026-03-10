@@ -11,7 +11,7 @@ Aktuelle Version: **1.4.0**
 - Einträge erfassen: Link, Textzitat, Notiz, aktuelle Seite
 - Capture per Kontextmenü: Seite, Link oder Auswahl direkt in ein Thema speichern
 - Konfigurierbare URL-Umschreibung in den Einstellungen:
-  - Quell-URL-Prefix definieren
+  - Eine oder mehrere Quell-URL-Prefixe definieren
   - Wert per Regex aus dem Seitentitel extrahieren
   - Ziel-URL über Vorlage mit Platzhalter `{value}` aufbauen
   - Anwendung bei Kontextmenü-Capture und `+ Aktuelle Seite`
@@ -88,7 +88,7 @@ Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
    - Oder per Drag-and-Drop in die Dropzone ziehen
 4. Daten bei Bedarf exportieren/importieren (JSON).
 5. Auto-Backups in den Add-on-Einstellungen konfigurieren.
-6. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL).
+6. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL; mehrere Quellen per Zeilenumbruch, `;`, `,` oder `|`).
 
 ## Berechtigungen
 

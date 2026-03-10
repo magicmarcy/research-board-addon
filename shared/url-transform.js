@@ -8,6 +8,25 @@
     idPlaceholder: '{value}'
   };
 
+  function splitSourceUrlPatterns(raw) {
+    return String(raw || '')
+      .split(/\r?\n|[;,|]/g)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function getSourceUrlPatterns(config) {
+    const c = normalizeConfig(config);
+    const seen = new Set();
+    const patterns = [];
+    for (const item of splitSourceUrlPatterns(c.sourceUrlPattern)) {
+      if (seen.has(item)) continue;
+      seen.add(item);
+      patterns.push(item);
+    }
+    return patterns;
+  }
+
   function normalizeConfig(config) {
     const c = config && typeof config === 'object' ? config : {};
     return {
@@ -23,8 +42,9 @@
     const c = normalizeConfig(config);
     if (!c.enabled) return { ok: true, config: c };
 
-    if (!c.sourceUrlPattern) {
-      return { ok: false, error: 'Bitte eine Quell-URL (Prefix) angeben.' };
+    const sourcePatterns = getSourceUrlPatterns(c);
+    if (!sourcePatterns.length) {
+      return { ok: false, error: 'Bitte mindestens eine Quell-URL (Prefix) angeben.' };
     }
     if (!c.targetUrlTemplate) {
       return { ok: false, error: 'Bitte eine Ziel-URL-Vorlage angeben.' };
@@ -43,11 +63,13 @@
 
   function applyToUrl(url, title, config) {
     const c = normalizeConfig(config);
+    const sourcePatterns = getSourceUrlPatterns(c);
     const rawUrl = String(url || '');
     const rawTitle = String(title || '');
     if (!c.enabled) return { transformed: false, url: rawUrl };
     if (!rawUrl || !rawTitle) return { transformed: false, url: rawUrl };
-    if (!c.sourceUrlPattern || !rawUrl.startsWith(c.sourceUrlPattern)) return { transformed: false, url: rawUrl };
+    if (!sourcePatterns.length) return { transformed: false, url: rawUrl };
+    if (!sourcePatterns.some((pattern) => rawUrl.startsWith(pattern))) return { transformed: false, url: rawUrl };
 
     let match;
     try {
@@ -82,6 +104,7 @@
     STORAGE_KEY,
     DEFAULT_CONFIG,
     normalizeConfig,
+    getSourceUrlPatterns,
     validateConfig,
     applyToUrl,
     getConfig,

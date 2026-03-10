@@ -33,7 +33,7 @@
 
     <section class="card">
       <h2>URL-Umschreibung</h2>
-      <p class="hint">Erkennt bestimmte Quell-URLs und baut daraus eine neue Ziel-URL. Ein Wert wird dabei per Regex aus dem Seitentitel gelesen.</p>
+      <p class="hint">Erkennt bestimmte Quell-URLs und baut daraus eine neue Ziel-URL. Mehrere Quell-URLs sind möglich (Trenner: Zeilenumbruch, <code>;</code>, <code>,</code> oder <code>|</code>). Ein Wert wird per Regex aus dem Seitentitel gelesen.</p>
       <form id="transformForm" class="form">
         <label class="row checkbox">
           <input id="transformEnabledInput" type="checkbox" />
@@ -41,8 +41,8 @@
         </label>
 
         <label class="field">
-          <span>Quell-URL (Prefix)</span>
-          <input id="sourceUrlPatternInput" type="text" placeholder="https://beispiel.de/main.xhtml" />
+          <span>Quell-URL(s) (Prefix)</span>
+          <input id="sourceUrlPatternInput" type="text" placeholder="https://beispiel.de/main.xhtml; https://beispiel.de/alt.xhtml" />
         </label>
 
         <label class="field">
