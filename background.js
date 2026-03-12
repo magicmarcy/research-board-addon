@@ -1,9 +1,34 @@
 (() => {
   const MAX_TOPICS_IN_MENU = 15;
+  const PENDING_CAPTURE_KEY = 'rbPendingCapture';
   let pendingCapture = null;
   const MENU_CONTEXTS = ['page', 'frame', 'selection', 'link'];
 
   const safe = (p) => p.catch(() => undefined);
+
+  async function setPendingCapture(value) {
+    pendingCapture = value || null;
+    if (pendingCapture) {
+      await safe(ext.storage.local.set({
+        [PENDING_CAPTURE_KEY]: pendingCapture,
+        pendingCaptureSignal: Date.now()
+      }));
+      return;
+    }
+    await safe(ext.storage.local.remove(PENDING_CAPTURE_KEY));
+    await safe(ext.storage.local.set({ pendingCaptureSignal: Date.now() }));
+  }
+
+  async function getPendingCapture() {
+    if (pendingCapture) return pendingCapture;
+    const values = await safe(ext.storage.local.get({ [PENDING_CAPTURE_KEY]: null }));
+    pendingCapture = values?.[PENDING_CAPTURE_KEY] || null;
+    return pendingCapture;
+  }
+
+  async function clearPendingCapture() {
+    await setPendingCapture(null);
+  }
 
   async function ensureDefaultTopic(db) {
     const topics = await rbDB.getAllTopics(db, { includeArchived: true });
@@ -170,11 +195,10 @@
       const id = info.menuItemId;
 
       if (id === 'rb_open_sidebar') {
-        pendingCapture = {
+        await setPendingCapture({
           info,
           tab: tab ? { id: tab.id, url: tab.url, title: tab.title } : null
-        };
-        await safe(ext.storage.local.set({ pendingCaptureSignal: Date.now() }));
+        });
         if (ext.sidebarAction?.open) {
           await safe(ext.sidebarAction.open());
         }
@@ -220,20 +244,21 @@
       }
 
       if (msg.type === 'getPendingCapture') {
-        return pendingCapture;
+        return getPendingCapture();
       }
 
       if (msg.type === 'clearPendingCapture') {
-        pendingCapture = null;
+        await clearPendingCapture();
         return { ok: true };
       }
 
       if (msg.type === 'addPendingCaptureToTopic') {
-        if (!pendingCapture) return { ok: false, error: 'NO_PENDING' };
+        const currentPending = await getPendingCapture();
+        if (!currentPending) return { ok: false, error: 'NO_PENDING' };
         const topicId = msg.topicId;
-        const info = pendingCapture.info;
-        const tab = pendingCapture.tab;
-        pendingCapture = null;
+        const info = currentPending.info;
+        const tab = currentPending.tab;
+        await clearPendingCapture();
         await addCapturedToTopic(topicId, info, tab);
         return { ok: true };
       }
