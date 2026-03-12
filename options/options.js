@@ -60,6 +60,7 @@
 
   function backupReasonLabel(reason) {
     if (reason === 'interval') return 'Intervall';
+    if (reason === 'change') return 'Änderung';
     if (reason === 'manual') return 'Manuell';
     if (reason === 'pre-restore') return 'Vor Wiederherstellung';
     if (reason === 'startup') return 'Start';

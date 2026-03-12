@@ -4,8 +4,11 @@
     config: 'rbAutoBackupConfig',
     legacyBackups: 'rbAutoBackups',
     lastSignature: 'rbAutoBackupLastSignature',
-    lastRunAt: 'rbAutoBackupLastRunAt'
+    lastRunAt: 'rbAutoBackupLastRunAt',
+    lastSavedAt: 'rbAutoBackupLastSavedAt',
+    lastBackedUpChangeToken: 'rbAutoBackupLastBackedUpChangeToken'
   };
+  const PERIODIC_VERIFY_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
   const DEFAULT_CONFIG = {
     enabled: true,
@@ -168,20 +171,45 @@
 
   async function createBackup({ reason = 'interval', force = false } = {}) {
     const db = await rbDB.openDb();
-    const snapshot = await rbDB.exportAll(db);
-    const signature = snapshotSignature(snapshot);
+    const changeState = await rbDB.getChangeState();
+    const currentChangeToken = String(changeState?.token || '');
     const values = await ext.storage.local.get({
-      [STORAGE_KEYS.lastSignature]: ''
+      [STORAGE_KEYS.lastSignature]: '',
+      [STORAGE_KEYS.lastSavedAt]: '',
+      [STORAGE_KEYS.lastBackedUpChangeToken]: ''
     });
     const lastSignature = String(values?.[STORAGE_KEYS.lastSignature] || '');
-    const existingBackups = await getStoredBackups(db);
+    const lastSavedAt = String(values?.[STORAGE_KEYS.lastSavedAt] || '');
+    const lastBackedUpChangeToken = String(values?.[STORAGE_KEYS.lastBackedUpChangeToken] || '');
+    const effectiveChangeToken = currentChangeToken || `legacy:${lastSignature || 'none'}`;
 
-    if (!force && lastSignature && lastSignature === signature) {
+    const nowMs = Date.now();
+    const lastSavedMs = lastSavedAt ? Date.parse(lastSavedAt) : NaN;
+    const needsPeriodicVerify = !Number.isFinite(lastSavedMs) || (nowMs - lastSavedMs >= PERIODIC_VERIFY_INTERVAL_MS);
+    const tokenUnchanged = effectiveChangeToken === lastBackedUpChangeToken;
+
+    if (!force && tokenUnchanged && !needsPeriodicVerify) {
       await ext.storage.local.set({ [STORAGE_KEYS.lastRunAt]: rbDB.nowIso() });
       return {
         ok: true,
         saved: false,
-        reason: 'unchanged',
+        reason: 'unchanged-token',
+        signature: lastSignature
+      };
+    }
+
+    const snapshot = await rbDB.exportAll(db);
+    const signature = snapshotSignature(snapshot);
+
+    if (!force && lastSignature && lastSignature === signature) {
+      await ext.storage.local.set({
+        [STORAGE_KEYS.lastRunAt]: rbDB.nowIso(),
+        [STORAGE_KEYS.lastBackedUpChangeToken]: effectiveChangeToken
+      });
+      return {
+        ok: true,
+        saved: false,
+        reason: tokenUnchanged ? 'unchanged-signature-verify' : 'unchanged-signature',
         signature
       };
     }
@@ -194,6 +222,7 @@
       snapshot
     };
 
+    const existingBackups = await getStoredBackups(db);
     await rbDB.putBackup(db, backupItem);
 
     const overflow = existingBackups.slice(Math.max(0, LIMITS.maxBackups - 1));
@@ -204,7 +233,9 @@
 
     await ext.storage.local.set({
       [STORAGE_KEYS.lastSignature]: signature,
-      [STORAGE_KEYS.lastRunAt]: backupItem.createdAt
+      [STORAGE_KEYS.lastRunAt]: backupItem.createdAt,
+      [STORAGE_KEYS.lastSavedAt]: backupItem.createdAt,
+      [STORAGE_KEYS.lastBackedUpChangeToken]: effectiveChangeToken
     });
 
     return {
@@ -244,7 +275,9 @@
     await migrateLegacyBackupsIfNeeded(db);
     await rbDB.clearBackups(db);
     await ext.storage.local.set({
-      [STORAGE_KEYS.lastSignature]: ''
+      [STORAGE_KEYS.lastSignature]: '',
+      [STORAGE_KEYS.lastSavedAt]: '',
+      [STORAGE_KEYS.lastBackedUpChangeToken]: ''
     });
     await ext.storage.local.remove(STORAGE_KEYS.legacyBackups);
     return { ok: true };
@@ -308,6 +341,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await rbDB.touchChangeToken();
   }
 
   async function restoreBackupById(backupId) {
@@ -332,9 +366,12 @@
     }
 
     const newSignature = backup.signature || snapshotSignature(backup.snapshot);
+    const changeState = await rbDB.getChangeState();
     await ext.storage.local.set({
       [STORAGE_KEYS.lastSignature]: newSignature,
-      [STORAGE_KEYS.lastRunAt]: rbDB.nowIso()
+      [STORAGE_KEYS.lastRunAt]: rbDB.nowIso(),
+      [STORAGE_KEYS.lastSavedAt]: rbDB.nowIso(),
+      [STORAGE_KEYS.lastBackedUpChangeToken]: String(changeState?.token || '')
     });
 
     return { ok: true };

@@ -1,7 +1,10 @@
 (() => {
   const MAX_TOPICS_IN_MENU = 15;
   const PENDING_CAPTURE_KEY = 'rbPendingCapture';
+  const DATA_CHANGE_SIGNAL_KEY = 'rbDataChangeSignal';
+  const CHANGE_BACKUP_DEBOUNCE_MS = 60 * 1000;
   let pendingCapture = null;
+  let changeBackupTimer = null;
   const MENU_CONTEXTS = ['page', 'frame', 'selection', 'link'];
 
   const safe = (p) => p.catch(() => undefined);
@@ -28,6 +31,23 @@
 
   async function clearPendingCapture() {
     await setPendingCapture(null);
+  }
+
+  function scheduleDebouncedChangeBackup() {
+    if (changeBackupTimer) {
+      clearTimeout(changeBackupTimer);
+      changeBackupTimer = null;
+    }
+    changeBackupTimer = setTimeout(async () => {
+      changeBackupTimer = null;
+      try {
+        const config = await rbAutoBackup.getConfig();
+        if (!config.enabled) return;
+        await rbAutoBackup.createBackup({ reason: 'change', force: false });
+      } catch (error) {
+        console.error('Debounced change backup failed', error);
+      }
+    }, CHANGE_BACKUP_DEBOUNCE_MS);
   }
 
   async function ensureDefaultTopic(db) {
@@ -337,6 +357,12 @@
 
   ext.alarms?.onAlarm?.addListener((alarm) => {
     rbAutoBackup.onAlarm(alarm);
+  });
+
+  ext.storage.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (!Object.prototype.hasOwnProperty.call(changes, DATA_CHANGE_SIGNAL_KEY)) return;
+    scheduleDebouncedChangeBackup();
   });
 
   ext.runtime.onStartup?.addListener(async () => {

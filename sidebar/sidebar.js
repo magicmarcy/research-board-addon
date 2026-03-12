@@ -1536,6 +1536,8 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+
+    await rbDB.touchChangeToken();
   }
 
   function parseUriList(text) {

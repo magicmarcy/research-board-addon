@@ -32,6 +32,7 @@
       onStartup: chromeApi.runtime.onStartup
     },
     storage: {
+      onChanged: chromeApi.storage.onChanged,
       local: {
         get: promisify(chromeApi.storage.local.get, chromeApi.storage.local),
         set: promisify(chromeApi.storage.local.set, chromeApi.storage.local),

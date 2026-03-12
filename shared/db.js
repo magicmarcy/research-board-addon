@@ -8,9 +8,14 @@
 
 (() => {
   const DB_NAME = 'research_board_db';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const MIN_POSITION = 0;
   const MAX_POSITION = Number.MAX_SAFE_INTEGER;
+  const CHANGE_STATE_KEYS = {
+    token: 'rbDataChangeToken',
+    changedAt: 'rbDataLastChangedAt',
+    signal: 'rbDataChangeSignal'
+  };
 
   const nowIso = () => new Date().toISOString();
 
@@ -49,6 +54,10 @@
           const backups = db.createObjectStore('backups', { keyPath: 'id' });
           backups.createIndex('by_createdAt', 'createdAt', { unique: false });
         }
+
+        if (!db.objectStoreNames.contains('meta')) {
+          db.createObjectStore('meta', { keyPath: 'key' });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -70,6 +79,32 @@
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
+  }
+
+  async function touchChangeToken() {
+    const token = uuid();
+    const changedAt = nowIso();
+    try {
+      await ext.storage.local.set({
+        [CHANGE_STATE_KEYS.token]: token,
+        [CHANGE_STATE_KEYS.changedAt]: changedAt,
+        [CHANGE_STATE_KEYS.signal]: Date.now()
+      });
+    } catch (error) {
+      console.error('Failed to touch change token', error);
+    }
+    return { token, changedAt };
+  }
+
+  async function getChangeState() {
+    const values = await ext.storage.local.get({
+      [CHANGE_STATE_KEYS.token]: '',
+      [CHANGE_STATE_KEYS.changedAt]: ''
+    });
+    return {
+      token: String(values?.[CHANGE_STATE_KEYS.token] || ''),
+      changedAt: String(values?.[CHANGE_STATE_KEYS.changedAt] || '')
+    };
   }
 
   function isDataError(error) {
@@ -225,6 +260,7 @@
     await withTx(db, ['topics'], 'readwrite', (tx) => {
       tx.objectStore('topics').add(topic);
     });
+    await touchChangeToken();
 
     return topic;
   }
@@ -247,6 +283,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await touchChangeToken();
 
     return updated;
   }
@@ -279,6 +316,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await touchChangeToken();
   }
 
   async function getEntriesByTopic(db, topicId) {
@@ -337,6 +375,7 @@
     await withTx(db, ['entries'], 'readwrite', (tx) => {
       tx.objectStore('entries').add(entry);
     });
+    await touchChangeToken();
 
     return entry;
   }
@@ -360,6 +399,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await touchChangeToken();
 
     return updated;
   }
@@ -368,6 +408,7 @@
     await withTx(db, ['entries'], 'readwrite', (tx) => {
       tx.objectStore('entries').delete(id);
     });
+    await touchChangeToken();
   }
 
   async function reorderTopics(db, orderedTopicIds) {
@@ -388,6 +429,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await touchChangeToken();
   }
 
   async function reorderEntries(db, topicId, orderedEntryIds) {
@@ -409,6 +451,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await touchChangeToken();
   }
 
   async function clearAll(db) {
@@ -420,6 +463,7 @@
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
+    await touchChangeToken();
   }
 
   async function exportAll(db) {
@@ -523,6 +567,9 @@
     openDb,
     uuid,
     nowIso,
+    changeStateKeys: CHANGE_STATE_KEYS,
+    touchChangeToken,
+    getChangeState,
     getAllTopics,
     getTopic,
     addTopic,
