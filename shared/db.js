@@ -3,11 +3,12 @@
   Stores:
     - topics: { id, title, description?, color?, createdAt, updatedAt, archived, position }
     - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, createdAt, updatedAt, position }
+    - backups: { id, createdAt, reason, signature, snapshot }
 */
 
 (() => {
   const DB_NAME = 'research_board_db';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const MIN_POSITION = 0;
   const MAX_POSITION = Number.MAX_SAFE_INTEGER;
 
@@ -42,6 +43,11 @@
           entries.createIndex('by_updatedAt', 'updatedAt', { unique: false });
           entries.createIndex('by_type', 'type', { unique: false });
           entries.createIndex('by_url', 'url', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains('backups')) {
+          const backups = db.createObjectStore('backups', { keyPath: 'id' });
+          backups.createIndex('by_createdAt', 'createdAt', { unique: false });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -450,6 +456,68 @@
     };
   }
 
+  async function getAllBackups(db) {
+    try {
+      const tx = db.transaction(['backups'], 'readonly');
+      const store = tx.objectStore('backups');
+      const idx = store.index('by_createdAt');
+      const results = [];
+      await new Promise((resolve, reject) => {
+        const cursorReq = idx.openCursor(null, 'prev');
+        cursorReq.onsuccess = () => {
+          const cur = cursorReq.result;
+          if (!cur) {
+            resolve();
+            return;
+          }
+          results.push(cur.value);
+          cur.continue();
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+      return results;
+    } catch (_) {
+      const tx = db.transaction(['backups'], 'readonly');
+      const store = tx.objectStore('backups');
+      const all = await reqToPromise(store.getAll());
+      return all.sort((a, b) => String(b?.createdAt || '').localeCompare(String(a?.createdAt || '')));
+    }
+  }
+
+  async function getBackup(db, id) {
+    const tx = db.transaction(['backups'], 'readonly');
+    const store = tx.objectStore('backups');
+    return reqToPromise(store.get(id));
+  }
+
+  async function putBackup(db, backupItem) {
+    await withTx(db, ['backups'], 'readwrite', (tx) => {
+      tx.objectStore('backups').put(backupItem);
+    });
+  }
+
+  async function putBackups(db, backupItems) {
+    if (!Array.isArray(backupItems) || backupItems.length === 0) return;
+    await withTx(db, ['backups'], 'readwrite', (tx) => {
+      const store = tx.objectStore('backups');
+      for (const item of backupItems) {
+        store.put(item);
+      }
+    });
+  }
+
+  async function deleteBackup(db, id) {
+    await withTx(db, ['backups'], 'readwrite', (tx) => {
+      tx.objectStore('backups').delete(id);
+    });
+  }
+
+  async function clearBackups(db) {
+    await withTx(db, ['backups'], 'readwrite', (tx) => {
+      tx.objectStore('backups').clear();
+    });
+  }
+
   // Expose
   globalThis.rbDB = {
     openDb,
@@ -468,6 +536,12 @@
     reorderTopics,
     reorderEntries,
     clearAll,
+    getAllBackups,
+    getBackup,
+    putBackup,
+    putBackups,
+    deleteBackup,
+    clearBackups,
     exportAll,
     exportTopic
   };

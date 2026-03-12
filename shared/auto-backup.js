@@ -2,7 +2,7 @@
   const AUTO_BACKUP_ALARM = 'rb_auto_backup_alarm';
   const STORAGE_KEYS = {
     config: 'rbAutoBackupConfig',
-    backups: 'rbAutoBackups',
+    legacyBackups: 'rbAutoBackups',
     lastSignature: 'rbAutoBackupLastSignature',
     lastRunAt: 'rbAutoBackupLastRunAt'
   };
@@ -124,13 +124,46 @@
     }
   }
 
-  async function getStoredBackups() {
-    const values = await ext.storage.local.get({ [STORAGE_KEYS.backups]: [] });
-    return Array.isArray(values?.[STORAGE_KEYS.backups]) ? values[STORAGE_KEYS.backups] : [];
+  function normalizeBackupItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    const snapshot = item.snapshot && typeof item.snapshot === 'object' ? item.snapshot : null;
+    if (!snapshot) return null;
+    const createdAt = typeof item.createdAt === 'string' && item.createdAt
+      ? item.createdAt
+      : rbDB.nowIso();
+    return {
+      id: item.id || rbDB.uuid(),
+      createdAt,
+      reason: String(item.reason || 'unknown'),
+      signature: String(item.signature || snapshotSignature(snapshot)),
+      snapshot
+    };
   }
 
-  async function putStoredBackups(backups) {
-    await ext.storage.local.set({ [STORAGE_KEYS.backups]: backups });
+  async function migrateLegacyBackupsIfNeeded(db) {
+    const values = await ext.storage.local.get({ [STORAGE_KEYS.legacyBackups]: [] });
+    const legacyBackups = Array.isArray(values?.[STORAGE_KEYS.legacyBackups]) ? values[STORAGE_KEYS.legacyBackups] : [];
+    if (!legacyBackups.length) return;
+
+    const existing = await rbDB.getAllBackups(db);
+    if (!existing.length) {
+      const migrated = legacyBackups
+        .map(normalizeBackupItem)
+        .filter(Boolean)
+        .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .slice(0, LIMITS.maxBackups);
+      if (migrated.length) {
+        await rbDB.putBackups(db, migrated);
+      }
+    }
+
+    // Remove legacy payload from storage.local to avoid hitting quota.
+    await ext.storage.local.remove(STORAGE_KEYS.legacyBackups);
+  }
+
+  async function getStoredBackups(db) {
+    await migrateLegacyBackupsIfNeeded(db);
+    return rbDB.getAllBackups(db);
   }
 
   async function createBackup({ reason = 'interval', force = false } = {}) {
@@ -138,11 +171,10 @@
     const snapshot = await rbDB.exportAll(db);
     const signature = snapshotSignature(snapshot);
     const values = await ext.storage.local.get({
-      [STORAGE_KEYS.lastSignature]: '',
-      [STORAGE_KEYS.backups]: []
+      [STORAGE_KEYS.lastSignature]: ''
     });
     const lastSignature = String(values?.[STORAGE_KEYS.lastSignature] || '');
-    const existingBackups = Array.isArray(values?.[STORAGE_KEYS.backups]) ? values[STORAGE_KEYS.backups] : [];
+    const existingBackups = await getStoredBackups(db);
 
     if (!force && lastSignature && lastSignature === signature) {
       await ext.storage.local.set({ [STORAGE_KEYS.lastRunAt]: rbDB.nowIso() });
@@ -162,9 +194,15 @@
       snapshot
     };
 
-    const next = [backupItem, ...existingBackups].slice(0, LIMITS.maxBackups);
+    await rbDB.putBackup(db, backupItem);
+
+    const overflow = existingBackups.slice(Math.max(0, LIMITS.maxBackups - 1));
+    for (const item of overflow) {
+      if (!item?.id) continue;
+      await rbDB.deleteBackup(db, item.id);
+    }
+
     await ext.storage.local.set({
-      [STORAGE_KEYS.backups]: next,
       [STORAGE_KEYS.lastSignature]: signature,
       [STORAGE_KEYS.lastRunAt]: backupItem.createdAt
     });
@@ -179,7 +217,8 @@
   }
 
   async function listBackupsMeta() {
-    const backups = await getStoredBackups();
+    const db = await rbDB.openDb();
+    const backups = await getStoredBackups(db);
     return backups.map((item) => ({
       id: item.id,
       createdAt: item.createdAt,
@@ -192,17 +231,22 @@
   }
 
   async function deleteBackup(backupId) {
-    const backups = await getStoredBackups();
-    const next = backups.filter((b) => b?.id !== backupId);
-    await putStoredBackups(next);
-    return { ok: true, deleted: backups.length - next.length };
+    const db = await rbDB.openDb();
+    await migrateLegacyBackupsIfNeeded(db);
+    const existing = await rbDB.getBackup(db, backupId);
+    if (!existing) return { ok: true, deleted: 0 };
+    await rbDB.deleteBackup(db, backupId);
+    return { ok: true, deleted: 1 };
   }
 
   async function clearBackups() {
+    const db = await rbDB.openDb();
+    await migrateLegacyBackupsIfNeeded(db);
+    await rbDB.clearBackups(db);
     await ext.storage.local.set({
-      [STORAGE_KEYS.backups]: [],
       [STORAGE_KEYS.lastSignature]: ''
     });
+    await ext.storage.local.remove(STORAGE_KEYS.legacyBackups);
     return { ok: true };
   }
 
@@ -267,8 +311,9 @@
   }
 
   async function restoreBackupById(backupId) {
-    const backups = await getStoredBackups();
-    const backup = backups.find((b) => b?.id === backupId);
+    const db = await rbDB.openDb();
+    await migrateLegacyBackupsIfNeeded(db);
+    const backup = await rbDB.getBackup(db, backupId);
     if (!backup) {
       throw new Error('Backup nicht gefunden.');
     }
@@ -278,7 +323,6 @@
 
     await createBackup({ reason: 'pre-restore', force: true });
 
-    const db = await rbDB.openDb();
     await replaceAllDataFromSnapshot(db, backup.snapshot);
 
     if (backup.snapshot.settings && typeof backup.snapshot.settings === 'object') {

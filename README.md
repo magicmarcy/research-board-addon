@@ -101,8 +101,8 @@ Das Add-on nutzt folgende Firefox-Berechtigungen:
 
 ## Datenhaltung und Datenschutz
 
-- Einträge und Themen: `IndexedDB` (lokal im Firefox-Profil)
-- Einstellungen und Backups: `storage.local`
+- Einträge, Themen und Backups: `IndexedDB` (lokal im Firefox-Profil)
+- Einstellungen und Backup-Metadaten (`lastSignature`, Konfiguration): `storage.local`
 - Keine Übertragung an externe Server durch dieses Add-on
 
 ## Projektstruktur
