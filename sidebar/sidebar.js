@@ -29,9 +29,15 @@
     topicEntrySearchIndex: new Map(),
     topicEntrySearchIndexReady: false,
     topicEntrySearchIndexPromise: null,
+    globalSearchQuery: '',
+    globalSearchResults: [],
+    globalSearchPromise: null,
     entries: [],
     view: 'topics', // topics | topic
     currentTopicId: null,
+    lastTopicsFocusId: null,
+    pendingFocusEntryId: null,
+    pendingOpenEntryId: null,
     search: '',
     drag: { type: null, id: null },
     kbdNav: { index: -1, id: null },
@@ -421,7 +427,12 @@
   }
 
   function getNavigableNodes() {
-    const selector = state.view === 'topic' ? '#entriesList .item' : '#topicsList .item';
+    let selector = '#topicsList .item';
+    if (state.view === 'topic') {
+      selector = '#entriesList .item';
+    } else if (normalizeQuery(state.search)) {
+      selector = '#searchResultsList .item';
+    }
     return Array.from(document.querySelectorAll(selector));
   }
 
@@ -515,6 +526,12 @@
     return (q ?? '').trim().toLowerCase();
   }
 
+  function escapeSelectorAttr(value) {
+    const raw = String(value ?? '');
+    if (globalThis.CSS?.escape) return globalThis.CSS.escape(raw);
+    return raw.replace(/["\\]/g, '\\$&');
+  }
+
   function matchesEntry(e, q) {
     if (!q) return true;
     const hay = [
@@ -539,6 +556,87 @@
     state.topicEntrySearchIndex.clear();
     state.topicEntrySearchIndexReady = false;
     state.topicEntrySearchIndexPromise = null;
+    state.globalSearchQuery = '';
+    state.globalSearchResults = [];
+    state.globalSearchPromise = null;
+  }
+
+  function getEntryMatchInfo(entry, q) {
+    if (!q) return null;
+    const checks = [
+      { key: 'title', label: 'Titel', value: entry.title || '' },
+      { key: 'excerpt', label: 'Text/Notiz', value: entry.excerpt || '' },
+      { key: 'note', label: 'Notiz', value: entry.note || '' },
+      { key: 'url', label: 'URL', value: entry.url || '' },
+      { key: 'sourcePageTitle', label: 'Quelle', value: entry.sourcePageTitle || '' },
+      { key: 'sourcePageUrl', label: 'Quell-URL', value: entry.sourcePageUrl || '' },
+      { key: 'linkText', label: 'Linktext', value: entry.linkText || '' }
+    ];
+    for (const c of checks) {
+      if (!c.value) continue;
+      const lower = c.value.toLowerCase();
+      const idx = lower.indexOf(q);
+      if (idx < 0) continue;
+      const start = Math.max(0, idx - 36);
+      const end = Math.min(c.value.length, idx + q.length + 64);
+      const snippet = c.value.slice(start, end).replace(/\s+/g, ' ').trim();
+      return {
+        key: c.key,
+        label: c.label,
+        snippet: snippet || c.value.slice(0, 100).trim()
+      };
+    }
+    return null;
+  }
+
+  async function ensureGlobalSearchResults(q) {
+    if (!q) {
+      state.globalSearchQuery = '';
+      state.globalSearchResults = [];
+      state.globalSearchPromise = null;
+      return;
+    }
+    if (state.globalSearchQuery === q && !state.globalSearchPromise) return;
+    if (state.globalSearchPromise && state.globalSearchQuery === q) {
+      await state.globalSearchPromise;
+      return;
+    }
+
+    const requestedQuery = q;
+    state.globalSearchQuery = requestedQuery;
+    state.globalSearchPromise = (async () => {
+      const topicById = new Map(state.topicsAll.map(t => [t.id, t]));
+      const allEntries = await rbDB.getAllEntries(state.db);
+      const results = [];
+      for (const entry of allEntries) {
+        const topic = topicById.get(entry.topicId);
+        if (!topic) continue;
+        const match = getEntryMatchInfo(entry, q);
+        if (!match) continue;
+        results.push({ entry, topic, match });
+      }
+
+      const typeRank = (type) => type === 'link' ? 0 : (type === 'quote' ? 1 : 2);
+      const matchRank = (key) => key === 'title' ? 0 : (key === 'excerpt' ? 1 : (key === 'note' ? 2 : 3));
+      results.sort((a, b) => {
+        const mr = matchRank(a.match.key) - matchRank(b.match.key);
+        if (mr !== 0) return mr;
+        const tr = typeRank(a.entry.type) - typeRank(b.entry.type);
+        if (tr !== 0) return tr;
+        return String(b.entry.updatedAt || b.entry.createdAt || '').localeCompare(String(a.entry.updatedAt || a.entry.createdAt || ''));
+      });
+
+      if (state.globalSearchQuery !== requestedQuery) return;
+      state.globalSearchResults = results.slice(0, 250);
+    })();
+
+    try {
+      await state.globalSearchPromise;
+    } finally {
+      if (state.globalSearchQuery === requestedQuery) {
+        state.globalSearchPromise = null;
+      }
+    }
   }
 
   async function ensureTopicEntrySearchIndex() {
@@ -697,6 +795,58 @@
     setHeaderForTopics();
 
     const q = normalizeQuery(state.search);
+    if (q) {
+      if (state.globalSearchQuery !== q || state.globalSearchPromise) {
+        ensureGlobalSearchResults(q)
+          .then(() => {
+            if (state.view !== 'topics') return;
+            if (normalizeQuery(state.search) !== q) return;
+            renderTopicsView();
+          })
+          .catch((err) => console.error('global search failed', err));
+      }
+
+      const list = el('div', { class: 'list', id: 'searchResultsList' });
+      if (state.globalSearchPromise && state.globalSearchQuery === q && state.globalSearchResults.length === 0) {
+        list.appendChild(renderEmpty('Suche läuft…'));
+      } else if (state.globalSearchResults.length === 0) {
+        list.appendChild(renderEmpty('Keine Treffer', 'Probiere andere Begriffe oder öffne das Archiv.'));
+      } else {
+        const summary = el('div', { class: 'subtle', style: 'margin-bottom:6px;' }, [
+          `${state.globalSearchResults.length} Treffer`
+        ]);
+        list.appendChild(summary);
+
+        for (const hit of state.globalSearchResults) {
+          const e = hit.entry;
+          const t = hit.topic;
+          const node = el('div', {
+            class: 'item item--search-hit',
+            dataset: { id: e.id, topicId: t.id, kind: 'search-hit' }
+          }, [
+            el('div', { class: 'item__row' }, [
+              entryBadge(e.type),
+              el('div', { class: 'item__title' }, [e.title || (e.type === 'link' ? e.url : e.excerpt) || '(ohne Titel)'])
+            ]),
+            el('div', { class: 'small item__aux' }, [`${t.title} · Treffer in ${hit.match.label}`]),
+            hit.match.snippet ? el('div', { class: 'small item__aux' }, [hit.match.snippet]) : null
+          ]);
+
+          node.addEventListener('click', async () => {
+            await openTopic(t.id, { preserveSearch: false, focusEntryId: e.id, openEntryId: e.id });
+          });
+
+          list.appendChild(node);
+        }
+      }
+
+      ui.main.innerHTML = '';
+      ui.main.appendChild(list);
+      ui.main.appendChild(renderSidebarFooter());
+      syncKbdActiveAfterRender();
+      return;
+    }
+
     const topicSource = q ? state.topicsAll : state.topics;
     if (q && !state.topicEntrySearchIndexReady) {
       ensureTopicEntrySearchIndex()
@@ -941,6 +1091,26 @@
     ui.main.appendChild(list);
     ui.main.appendChild(renderSidebarFooter());
     syncKbdActiveAfterRender();
+    if (state.pendingFocusEntryId) {
+      const id = state.pendingFocusEntryId;
+      state.pendingFocusEntryId = null;
+      setTimeout(() => {
+        const node = document.querySelector(`#entriesList .item[data-id="${escapeSelectorAttr(id)}"]`);
+        if (!node) return;
+        node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        node.classList.add('item--focus-flash');
+        setTimeout(() => node.classList.remove('item--focus-flash'), 2400);
+      }, 20);
+    }
+
+    if (state.pendingOpenEntryId) {
+      const id = state.pendingOpenEntryId;
+      state.pendingOpenEntryId = null;
+      const targetEntry = state.entries.find((entry) => entry.id === id);
+      if (targetEntry) {
+        setTimeout(() => openEntry(targetEntry), 40);
+      }
+    }
 
     // Drop capture
     const dz = $('#dropzone');
@@ -970,11 +1140,18 @@
     }
   }
 
-  async function openTopic(topicId) {
+  async function openTopic(topicId, { preserveSearch = false, focusEntryId = null, openEntryId = null } = {}) {
+    if (state.view === 'topics') {
+      state.lastTopicsFocusId = topicId;
+    }
     state.currentTopicId = topicId;
     await saveSettings({ lastTopicId: topicId });
-    state.search = '';
-    ui.searchInput.value = '';
+    if (!preserveSearch) {
+      state.search = '';
+      ui.searchInput.value = '';
+    }
+    state.pendingFocusEntryId = focusEntryId || null;
+    state.pendingOpenEntryId = openEntryId || null;
     await refreshEntries();
     renderTopicView();
   }
@@ -982,6 +1159,13 @@
   function backToTopics() {
     state.search = '';
     ui.searchInput.value = '';
+    state.pendingFocusEntryId = null;
+    state.pendingOpenEntryId = null;
+    if (state.lastTopicsFocusId) {
+      state.kbdNav = { index: -1, id: state.lastTopicsFocusId };
+    } else {
+      state.kbdNav = { index: -1, id: null };
+    }
     renderTopicsView();
   }
 

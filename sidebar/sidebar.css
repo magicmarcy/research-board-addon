@@ -392,6 +392,23 @@ select {
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-weak) 60%, transparent);
 }
 
+.item--focus-flash {
+  animation: item-focus-flash 2.4s ease;
+}
+
+@keyframes item-focus-flash {
+  0% {
+    border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-weak) 75%, transparent);
+    background: color-mix(in oklab, var(--surface) 70%, var(--accent-weak));
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: none;
+    background: var(--surface);
+  }
+}
+
 .item[draggable="true"] { user-select: none; }
 
 .item__row {
@@ -446,6 +463,13 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.item--search-hit .item__aux {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .item--entry .item__actions {
