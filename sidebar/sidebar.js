@@ -1143,7 +1143,9 @@
         ]),
         el('div', { class: 'field' }, [
           el('div', { class: 'label' }, ['Erstellt']),
-          el('div', { class: 'small' }, [formatDate(entry.createdAt)])
+          el('div', { class: 'small' }, [formatDate(entry.createdAt)]),
+          el('div', { class: 'label', style: 'margin-top:8px;' }, ['Aktualisiert']),
+          el('div', { class: 'small' }, [formatDate(entry.updatedAt || entry.createdAt)])
         ])
       ]),
 
