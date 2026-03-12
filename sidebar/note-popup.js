@@ -34,6 +34,10 @@
     close();
   };
 
+  const saveWithoutClose = () => {
+    channel.postMessage({ type: 'saveNoClose', value: editor.value });
+  };
+
   channel.onmessage = (ev) => {
     const msg = ev?.data;
     if (!msg || typeof msg !== 'object') return;
@@ -51,6 +55,11 @@
     if (ev.key === 'Escape') {
       ev.preventDefault();
       close();
+      return;
+    }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+      ev.preventDefault();
+      saveWithoutClose();
       return;
     }
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'enter') {

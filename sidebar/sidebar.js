@@ -34,7 +34,8 @@
     currentTopicId: null,
     search: '',
     drag: { type: null, id: null },
-    kbdNav: { index: -1, id: null }
+    kbdNav: { index: -1, id: null },
+    popupKeepModalOpenOnNextSave: false
   };
   const THEME_MODE_KEY = 'themeMode';
 
@@ -219,6 +220,7 @@
     ui.modalTitle.textContent = title;
     ui.modalBody.innerHTML = '';
     ui.modalFooter.innerHTML = '';
+    ui.modal.dataset.popupSaveMode = '';
     if (body) ui.modalBody.appendChild(body);
     if (footer) ui.modalFooter.appendChild(footer);
     ui.modalOverlay.classList.remove('hidden');
@@ -307,6 +309,18 @@
         cleanup({ restoreModal: false });
         return;
       }
+      if (msg.type === 'saveNoClose') {
+        sourceTextarea.value = String(msg.value ?? '');
+        sourceTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const saveBtn = ui.modalFooter?.querySelector('.btn--primary');
+        if (saveBtn && ui.modal?.dataset?.popupSaveMode === 'update-entry') {
+          state.popupKeepModalOpenOnNextSave = true;
+          saveBtn.click();
+        } else {
+          toast('Zwischengespeichert');
+        }
+        return;
+      }
       if (msg.type === 'close') {
         cleanup();
       }
@@ -318,6 +332,8 @@
     ui.modalOverlay.setAttribute('aria-hidden', 'true');
     ui.modalBody.innerHTML = '';
     ui.modalFooter.innerHTML = '';
+    ui.modal.dataset.popupSaveMode = '';
+    state.popupKeepModalOpenOnNextSave = false;
   }
 
   function isEditableTarget(target) {
@@ -1194,6 +1210,8 @@
           await ext.runtime.sendMessage({ type: 'openUrlInTab', url: entry.url }).catch(() => {});
         } }, ['Öffnen']) : null,
         el('button', { class: 'btn btn--primary', onclick: async () => {
+          const keepModalOpen = state.popupKeepModalOpenOnNextSave;
+          state.popupKeepModalOpenOnNextSave = false;
           const patch = {
             title: titleInput.value.trim(),
             url: entry.type === 'link' ? urlInput.value.trim() : entry.url,
@@ -1202,15 +1220,16 @@
           };
           await rbDB.updateEntry(state.db, entry.id, patch);
           markTopicSearchIndexDirty();
-          closeModal();
+          if (!keepModalOpen) closeModal();
           await refreshEntries();
-          render();
+          if (!keepModalOpen) render();
           toast('Gespeichert');
         } }, ['Speichern'])
       ])
     ]);
 
     openModal({ title: 'Eintrag', body, footer });
+    ui.modal.dataset.popupSaveMode = 'update-entry';
   }
 
   async function showSwitchTopicModal() {
