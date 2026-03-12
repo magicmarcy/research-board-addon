@@ -327,6 +327,80 @@
     };
   }
 
+  function openEntryNotePopupDirect(entry, triggerButton) {
+    if (!entry || (entry.type !== 'note' && entry.type !== 'quote')) return;
+
+    // Avoid sticky :focus-within hover state on the source row.
+    triggerButton?.blur?.();
+
+    const channelId = `note-popup-entry-${entry.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const popupTitle = entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten';
+    const url = ext.runtime.getURL(
+      `sidebar/note-popup.html?channel=${encodeURIComponent(channelId)}&title=${encodeURIComponent(popupTitle)}&theme=${encodeURIComponent(theme)}`
+    );
+
+    const channel = new BroadcastChannel(channelId);
+    const popup = window.open(url, '_blank', 'popup=yes,width=980,height=760,resizable=yes,scrollbars=yes');
+    if (!popup) {
+      channel.close();
+      toast('Popup wurde blockiert');
+      return;
+    }
+
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(closeWatchId);
+      channel.close();
+      triggerButton?.blur?.();
+    };
+
+    const closeWatchId = setInterval(() => {
+      if (!popup.closed) return;
+      cleanup();
+    }, 500);
+
+    const persistPopupValue = async (value) => {
+      const next = String(value ?? '');
+      if (entry.type === 'note' || entry.type === 'quote') {
+        await rbDB.updateEntry(state.db, entry.id, { excerpt: next });
+        entry.excerpt = next;
+      }
+      markTopicSearchIndexDirty();
+      await refreshEntries();
+      render();
+      toast('Gespeichert');
+    };
+
+    channel.onmessage = (ev) => {
+      const msg = ev?.data;
+      if (!msg || typeof msg !== 'object') return;
+
+      (async () => {
+        if (msg.type === 'popupReady') {
+          channel.postMessage({ type: 'initValue', value: entry.excerpt || '' });
+          return;
+        }
+        if (msg.type === 'saveNoClose') {
+          await persistPopupValue(msg.value);
+          return;
+        }
+        if (msg.type === 'apply') {
+          await persistPopupValue(msg.value);
+          return;
+        }
+        if (msg.type === 'close') {
+          cleanup();
+        }
+      })().catch((error) => {
+        console.error(error);
+        toast('Speichern fehlgeschlagen');
+      });
+    };
+  }
+
   function closeModal() {
     ui.modalOverlay.classList.add('hidden');
     ui.modalOverlay.setAttribute('aria-hidden', 'true');
@@ -782,6 +856,12 @@
                 ev.stopPropagation();
                 await ext.runtime.sendMessage({ type: 'openUrlInTab', url: e.url }).catch(() => {});
               } }, ['🔗'])
+            : null,
+          (e.type === 'note' || e.type === 'quote')
+            ? el('button', { class: 'btn btn--xs btn--icon', title: e.type === 'quote' ? 'Text-Popup' : 'Notiz-Popup', 'aria-label': e.type === 'quote' ? 'Text-Popup' : 'Notiz-Popup', onclick: (ev) => {
+                ev.stopPropagation();
+                openEntryNotePopupDirect(e, ev.currentTarget);
+              } }, ['⤢'])
             : null,
           el('button', { class: 'btn btn--xs btn--icon', title: 'Bearbeiten', 'aria-label': 'Bearbeiten', onclick: (ev) => {
             ev.stopPropagation();
