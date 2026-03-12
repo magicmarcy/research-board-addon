@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.4.0**
+Aktuelle Version: **1.4.8**
 
 ## Features
 
@@ -18,13 +18,17 @@ Aktuelle Version: **1.4.0**
 - Notiz-/Textfeld-Vergrößerung per `⤢`:
   - Externes, separates Popup-Fenster zum Bearbeiten langer Inhalte
   - Popup-`Speichern` übernimmt den Text und speichert den Eintrag direkt
+  - `Ctrl+S` im Popup speichert ohne das Popup zu schließen
 - Drag-and-Drop-Unterstützung für Inhalte und Sortierung
-- Suche in Themen und Einträgen
+- Globale Suche in Themen und Einträgen:
+  - Trefferliste mit Treffer-Kontext (z. B. Titel, Notiz, URL)
+  - Klick auf Treffer öffnet direkt den passenden Eintrag im Thema
+- Eintragsdetails zeigen `Erstellt` und `Aktualisiert`
 - Import/Export als JSON:
   - Gesamte Daten exportieren/importieren
   - Einzelnes Thema exportieren
   - Import-Modi: zusammenführen oder ersetzen
-- Lokale Auto-Backups mit Intervall, manuellem Backup und Restore (inkl. Sicherheits-Backup vor Wiederherstellung)
+- Lokale Auto-Backups mit Intervall, Änderungstrigger, Start-Backup, manuellem Backup und Restore (inkl. Sicherheits-Backup vor Wiederherstellung)
 - Vollständig lokal, ohne externe Backend-Abhängigkeit
 
 ## Installation
@@ -88,13 +92,14 @@ Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
    - Oder per Drag-and-Drop in die Dropzone ziehen
 4. Daten bei Bedarf exportieren/importieren (JSON).
 5. Auto-Backups in den Add-on-Einstellungen konfigurieren.
+   - Backups werden zusätzlich bei Datenänderungen zuverlässig (debounced) ausgelöst.
 6. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL; mehrere Quellen per Zeilenumbruch, `;`, `,` oder `|`).
 
 ## Berechtigungen
 
 Das Add-on nutzt folgende Firefox-Berechtigungen:
 
-- `storage`: Lokale Einstellungen und Backup-Metadaten speichern
+- `storage`: Lokale Einstellungen, Pending-Capture-Status und Backup-Metadaten speichern
 - `tabs`: Tab-URL/Titel für Einträge nutzen und Links in neuen Tabs öffnen
 - `contextMenus`: Kontextmenü-Einträge für schnelles Erfassen bereitstellen
 - `alarms`: Zeitgesteuerte Auto-Backups ausführen
@@ -102,7 +107,8 @@ Das Add-on nutzt folgende Firefox-Berechtigungen:
 ## Datenhaltung und Datenschutz
 
 - Einträge, Themen und Backups: `IndexedDB` (lokal im Firefox-Profil)
-- Einstellungen und Backup-Metadaten (`lastSignature`, Konfiguration): `storage.local`
+- Einstellungen und Backup-/Change-Metadaten (u. a. URL-Umschreibung, Theme, `lastSignature`, Change-Token): `storage.local`
+- Pending-Capture-Zustand für Kontextmenü-Übergaben: `storage.local`
 - Keine Übertragung an externe Server durch dieses Add-on
 
 ## Projektstruktur
