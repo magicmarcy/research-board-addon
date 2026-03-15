@@ -278,13 +278,21 @@
     return reqToPromise(store.get(id));
   }
 
-  async function addTopic(db, { title, description = '', color = '' } = {}) {
+  function normalizeEntrySortMode(mode) {
+    if (mode === 'type') return 'type';
+    if (mode === 'title') return 'title';
+    if (mode === 'type_then_title') return 'type_then_title';
+    return 'custom';
+  }
+
+  async function addTopic(db, { title, description = '', color = '', entrySortMode = 'custom' } = {}) {
     const createdAt = nowIso();
     const topic = {
       id: uuid(),
       title: (title ?? 'Neues Thema').trim() || 'Neues Thema',
       description: description ?? '',
       color: color ?? '',
+      entrySortMode: normalizeEntrySortMode(entrySortMode),
       archived: false,
       createdAt,
       updatedAt: createdAt,
@@ -308,6 +316,9 @@
     const updated = {
       ...cur,
       ...patch,
+      entrySortMode: Object.prototype.hasOwnProperty.call(patch || {}, 'entrySortMode')
+        ? normalizeEntrySortMode(patch.entrySortMode)
+        : normalizeEntrySortMode(cur.entrySortMode),
       updatedAt: nowIso()
     };
 
@@ -735,6 +746,7 @@
     appSettingsKeys: APP_SETTINGS_KEYS,
     appSettingsDefaults: APP_SETTINGS_DEFAULTS,
     normalizeAppSettings,
+    normalizeEntrySortMode,
     normalizeTodoItems,
     exportAppSettings,
     applyImportedSettings,

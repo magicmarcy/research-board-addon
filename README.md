@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.6.1**
+Aktuelle Version: **1.7.0**
 
 ## Features
 
@@ -15,6 +15,9 @@ Aktuelle Version: **1.6.1**
 - Todo-Listen als eigener Eintragstyp:
   - Punkte hinzufügen, löschen und als erledigt markieren
   - Direkt im Eintragsdialog pflegbar
+- Sortierung pro Thema:
+  - Benutzerdefiniert per Drag and Drop
+  - Nach Typ, Name oder Typ und Name
 - Capture per Kontextmenü: Seite, Link oder Auswahl direkt in ein Thema speichern
 - Konfigurierbare URL-Umschreibung in den Einstellungen:
   - Eine oder mehrere Quell-URL-Prefixe definieren

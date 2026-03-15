@@ -563,6 +563,80 @@
     return entry.title || entry.excerpt || '(ohne Titel)';
   }
 
+  function getTopicEntrySortMode(topic) {
+    return rbDB.normalizeEntrySortMode(topic?.entrySortMode);
+  }
+
+  function getEntryTypeRank(type) {
+    return type === 'link' ? 0 : (type === 'quote' ? 1 : (type === 'todo' ? 2 : 3));
+  }
+
+  function getEntrySortLabel(mode) {
+    if (mode === 'type') return 'Typ';
+    if (mode === 'title') return 'Name';
+    if (mode === 'type_then_title') return 'Typ, dann Name';
+    return 'Benutzerdefiniert';
+  }
+
+  async function updateTopicEntrySortMode(topicId, nextMode) {
+    await rbDB.updateTopic(state.db, topicId, { entrySortMode: nextMode });
+    await refreshTopics();
+    await refreshEntries();
+    render();
+    toast(`Sortierung: ${getEntrySortLabel(nextMode)}`);
+  }
+
+  function openTopicSortMenu(topic, anchorEl) {
+    if (!topic) return;
+    const currentMode = getTopicEntrySortMode(topic);
+    const rect = anchorEl?.getBoundingClientRect?.();
+    openDropdown([
+      {
+        label: currentMode === 'custom' ? 'Benutzerdefiniert ✓' : 'Benutzerdefiniert',
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'custom')
+      },
+      {
+        label: currentMode === 'type' ? 'Typ ✓' : 'Typ',
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'type')
+      },
+      {
+        label: currentMode === 'title' ? 'Name ✓' : 'Name',
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'title')
+      },
+      {
+        label: currentMode === 'type_then_title' ? 'Typ, dann Name ✓' : 'Typ, dann Name',
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'type_then_title')
+      }
+    ], rect ? {
+      anchorX: rect.right - 220,
+      anchorY: rect.bottom + 6
+    } : {});
+  }
+
+  function sortEntriesForTopic(entries, topic) {
+    const mode = getTopicEntrySortMode(topic);
+    const list = Array.isArray(entries) ? [...entries] : [];
+    if (mode === 'custom') return list;
+
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const byDisplayName = (a, b) => {
+      const nameA = getEntryDisplayTitle(a);
+      const nameB = getEntryDisplayTitle(b);
+      const cmp = collator.compare(nameA, nameB);
+      if (cmp !== 0) return cmp;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    };
+
+    list.sort((a, b) => {
+      if (mode === 'title') return byDisplayName(a, b);
+      const typeCmp = getEntryTypeRank(a.type) - getEntryTypeRank(b.type);
+      if (typeCmp !== 0) return typeCmp;
+      if (mode === 'type_then_title') return byDisplayName(a, b);
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+    return list;
+  }
+
   function collectEntrySearchParts(entry) {
     return [
       entry.title,
@@ -736,12 +810,11 @@
         results.push({ entry, topic, match });
       }
 
-      const typeRank = (type) => type === 'link' ? 0 : (type === 'quote' ? 1 : (type === 'todo' ? 2 : 3));
       const matchRank = (key) => key === 'title' ? 0 : (key === 'excerpt' ? 1 : (key === 'todos' ? 2 : (key === 'note' ? 3 : 4)));
       results.sort((a, b) => {
         const mr = matchRank(a.match.key) - matchRank(b.match.key);
         if (mr !== 0) return mr;
-        const tr = typeRank(a.entry.type) - typeRank(b.entry.type);
+        const tr = getEntryTypeRank(a.entry.type) - getEntryTypeRank(b.entry.type);
         if (tr !== 0) return tr;
         return String(b.entry.updatedAt || b.entry.createdAt || '').localeCompare(String(a.entry.updatedAt || a.entry.createdAt || ''));
       });
@@ -816,7 +889,9 @@
       state.entries = [];
       return;
     }
-    state.entries = await rbDB.getEntriesByTopic(state.db, state.currentTopicId);
+    const topic = state.topicsAll.find((item) => item.id === state.currentTopicId) || state.topics.find((item) => item.id === state.currentTopicId) || null;
+    const rawEntries = await rbDB.getEntriesByTopic(state.db, state.currentTopicId);
+    state.entries = sortEntriesForTopic(rawEntries, topic);
   }
 
   async function ensureDefaultTopic() {
@@ -1100,11 +1175,23 @@
 
   function renderTopicView() {
     state.view = 'topic';
-    const topic = state.topics.find(t => t.id === state.currentTopicId);
+    const topic = state.topicsAll.find(t => t.id === state.currentTopicId) || state.topics.find(t => t.id === state.currentTopicId);
+    const topicSortMode = getTopicEntrySortMode(topic);
+    const isCustomOrder = topicSortMode === 'custom';
     setHeaderForTopic(topic);
 
     const q = normalizeQuery(state.search);
     const entries = state.entries.filter(e => matchesEntry(e, q));
+    const sortBtn = el('button', {
+      class: 'btn btn--icon',
+      type: 'button',
+      title: `Sortierung: ${getEntrySortLabel(topicSortMode)}`,
+      'aria-label': `Sortierung: ${getEntrySortLabel(topicSortMode)}`,
+      onclick: (ev) => {
+        ev.stopPropagation();
+        openTopicSortMenu(topic, ev.currentTarget);
+      }
+    }, ['⇅']);
 
     const headerCard = el('div', { class: 'card section topic-detail-header' }, [
       topic?.description ? el('div', { class: 'small', style: 'margin-top:6px;' }, [topic.description]) : null,
@@ -1112,7 +1199,8 @@
         el('button', { class: 'btn', onclick: () => addEntryFlow('link') }, ['+ Link']),
         el('button', { class: 'btn', onclick: addCurrentPageFlow }, ['+ Aktuelle Seite']),
         el('button', { class: 'btn', onclick: () => addEntryFlow('note') }, ['+ Notiz']),
-        el('button', { class: 'btn', onclick: () => addEntryFlow('todo') }, ['+ Todo'])
+        el('button', { class: 'btn', onclick: () => addEntryFlow('todo') }, ['+ Todo']),
+        sortBtn
       ]),
       el('div', { class: 'dropzone', id: 'dropzone', style: 'margin-top:10px;' }, ['Drop here'])
     ]);
@@ -1142,7 +1230,7 @@
 
         const node = el('div', {
           class: `item item--entry${isLink ? ' item--entry-link' : ''}`,
-          draggable: 'true',
+          draggable: isCustomOrder ? 'true' : 'false',
           dataset: { id: e.id, kind: 'entry' }
         }, [
           el('div', { class: 'item__hover-tools' }, [
@@ -1191,6 +1279,10 @@
 
         // Reorder drag
         node.addEventListener('dragstart', (ev) => {
+          if (!isCustomOrder) {
+            ev.preventDefault();
+            return;
+          }
           closeDropdown();
           state.drag = { type: 'entry', id: e.id };
           ev.dataTransfer.effectAllowed = 'move';
@@ -1201,12 +1293,14 @@
         });
 
         node.addEventListener('dragover', (ev) => {
+          if (!isCustomOrder) return;
           if (state.drag.type !== 'entry') return;
           ev.preventDefault();
           ev.dataTransfer.dropEffect = 'move';
         });
 
         node.addEventListener('drop', async (ev) => {
+          if (!isCustomOrder) return;
           if (state.drag.type !== 'entry') return;
           ev.preventDefault();
           const draggedId = state.drag.id;
