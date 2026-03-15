@@ -169,6 +169,7 @@
           linkText: snapshot.linkText,
           excerpt: snapshot.excerpt,
           note: snapshot.note,
+          todos: snapshot.todos,
           position: snapshot.position
         });
         markTopicSearchIndexDirty();
@@ -535,7 +536,117 @@
   function entryBadge(type) {
     if (type === 'link') return el('span', { class: 'badge badge--link' }, ['Link']);
     if (type === 'quote') return el('span', { class: 'badge badge--quote' }, ['Text']);
+    if (type === 'todo') return el('span', { class: 'badge badge--todo' }, ['Todo']);
     return el('span', { class: 'badge badge--note' }, ['Notiz']);
+  }
+
+  function normalizeTodoItems(items) {
+    return rbDB.normalizeTodoItems(items);
+  }
+
+  function getTodoStats(items) {
+    const todos = normalizeTodoItems(items);
+    const done = todos.filter((item) => item.done).length;
+    return { total: todos.length, done, open: todos.length - done, items: todos };
+  }
+
+  function getTodoSummary(entry) {
+    const stats = getTodoStats(entry?.todos);
+    if (!stats.total) return '0/0 erledigt';
+    return `${stats.done}/${stats.total} erledigt`;
+  }
+
+  function getEntryDisplayTitle(entry) {
+    if (!entry) return '(ohne Titel)';
+    if (entry.type === 'link') return entry.title || entry.url || '(ohne Titel)';
+    if (entry.type === 'todo') return entry.title || normalizeTodoItems(entry.todos)[0]?.text || 'Todo-Liste';
+    return entry.title || entry.excerpt || '(ohne Titel)';
+  }
+
+  function collectEntrySearchParts(entry) {
+    return [
+      entry.title,
+      entry.url,
+      entry.excerpt,
+      entry.note,
+      entry.sourcePageTitle,
+      entry.sourcePageUrl,
+      entry.linkText,
+      ...normalizeTodoItems(entry.todos).map((item) => item.text)
+    ];
+  }
+
+  function createTodoEditor(initialItems = []) {
+    let items = normalizeTodoItems(initialItems);
+    const list = el('div', { class: 'todo-editor__list' });
+
+    const renderItems = () => {
+      list.innerHTML = '';
+      if (!items.length) {
+        list.appendChild(el('div', { class: 'subtle' }, ['Noch keine Punkte.']));
+        return;
+      }
+      for (const item of items) {
+        const row = el('div', { class: 'todo-editor__item' });
+        const check = el('input', { type: 'checkbox', checked: item.done });
+        const textInput = el('input', {
+          class: 'input todo-editor__text',
+          type: 'text',
+          value: item.text,
+          placeholder: 'Todo-Punkt'
+        });
+        const deleteBtn = el('button', { class: 'btn btn--xs btn--icon btn--quiet-danger', type: 'button', title: 'Punkt löschen', 'aria-label': 'Punkt löschen' }, ['✕']);
+
+        check.addEventListener('change', () => {
+          item.done = check.checked;
+        });
+        textInput.addEventListener('input', () => {
+          item.text = textInput.value;
+        });
+        textInput.addEventListener('keydown', (ev) => {
+          if (ev.key !== 'Enter') return;
+          ev.preventDefault();
+          addItem('', item.id);
+        });
+        deleteBtn.addEventListener('click', () => {
+          items = items.filter((candidate) => candidate.id !== item.id);
+          renderItems();
+        });
+
+        row.append(check, textInput, deleteBtn);
+        list.appendChild(row);
+      }
+    };
+
+    const addItem = (text = '', afterId = null) => {
+      const next = { id: rbDB.uuid(), text: String(text || ''), done: false };
+      if (!afterId) items.push(next);
+      else {
+        const index = items.findIndex((item) => item.id === afterId);
+        if (index < 0) items.push(next);
+        else items.splice(index + 1, 0, next);
+      }
+      renderItems();
+      const inputs = list.querySelectorAll('.todo-editor__text');
+      inputs[inputs.length - 1]?.focus();
+    };
+
+    const addBtn = el('button', { class: 'btn', type: 'button', onclick: () => addItem() }, ['+ Punkt']);
+    const root = el('div', { class: 'todo-editor' }, [list, el('div', { class: 'todo-editor__actions' }, [addBtn])]);
+    renderItems();
+
+    return {
+      root,
+      getItems: () => normalizeTodoItems(items),
+      focusFirst() {
+        const firstInput = list.querySelector('.todo-editor__text');
+        if (firstInput) {
+          firstInput.focus();
+          return;
+        }
+        addItem();
+      }
+    };
   }
 
   function normalizeQuery(q) {
@@ -550,15 +661,7 @@
 
   function matchesEntry(e, q) {
     if (!q) return true;
-    const hay = [
-      e.title,
-      e.url,
-      e.excerpt,
-      e.note,
-      e.sourcePageTitle,
-      e.sourcePageUrl,
-      e.linkText
-    ].join(' ').toLowerCase();
+    const hay = collectEntrySearchParts(e).join(' ').toLowerCase();
     return hay.includes(q);
   }
 
@@ -583,6 +686,7 @@
       { key: 'title', label: 'Titel', value: entry.title || '' },
       { key: 'excerpt', label: 'Text/Notiz', value: entry.excerpt || '' },
       { key: 'note', label: 'Notiz', value: entry.note || '' },
+      { key: 'todos', label: 'Todo', value: normalizeTodoItems(entry.todos).map((item) => item.text).join(' ') },
       { key: 'url', label: 'URL', value: entry.url || '' },
       { key: 'sourcePageTitle', label: 'Quelle', value: entry.sourcePageTitle || '' },
       { key: 'sourcePageUrl', label: 'Quell-URL', value: entry.sourcePageUrl || '' },
@@ -632,8 +736,8 @@
         results.push({ entry, topic, match });
       }
 
-      const typeRank = (type) => type === 'link' ? 0 : (type === 'quote' ? 1 : 2);
-      const matchRank = (key) => key === 'title' ? 0 : (key === 'excerpt' ? 1 : (key === 'note' ? 2 : 3));
+      const typeRank = (type) => type === 'link' ? 0 : (type === 'quote' ? 1 : (type === 'todo' ? 2 : 3));
+      const matchRank = (key) => key === 'title' ? 0 : (key === 'excerpt' ? 1 : (key === 'todos' ? 2 : (key === 'note' ? 3 : 4)));
       results.sort((a, b) => {
         const mr = matchRank(a.match.key) - matchRank(b.match.key);
         if (mr !== 0) return mr;
@@ -668,15 +772,7 @@
       for (const e of allEntries) {
         const topicId = e?.topicId;
         if (!topicId) continue;
-        const part = normalizeQuery([
-          e.title,
-          e.url,
-          e.excerpt,
-          e.note,
-          e.sourcePageTitle,
-          e.sourcePageUrl,
-          e.linkText
-        ].join(' '));
+        const part = normalizeQuery(collectEntrySearchParts(e).join(' '));
         if (!part) continue;
         const prev = map.get(topicId);
         map.set(topicId, prev ? `${prev} ${part}` : part);
@@ -842,7 +938,7 @@
           }, [
             el('div', { class: 'item__row' }, [
               entryBadge(e.type),
-              el('div', { class: 'item__title' }, [e.title || (e.type === 'link' ? e.url : e.excerpt) || '(ohne Titel)'])
+              el('div', { class: 'item__title' }, [getEntryDisplayTitle(e)])
             ]),
             el('div', { class: 'small item__aux' }, [`${t.title} · Treffer in ${hit.match.label}`]),
             hit.match.snippet ? el('div', { class: 'small item__aux' }, [hit.match.snippet]) : null
@@ -1015,8 +1111,8 @@
       el('div', { class: 'toolbar topic-detail-add-toolbar', style: 'margin-top:10px;' }, [
         el('button', { class: 'btn', onclick: () => addEntryFlow('link') }, ['+ Link']),
         el('button', { class: 'btn', onclick: addCurrentPageFlow }, ['+ Aktuelle Seite']),
-        el('button', { class: 'btn', onclick: () => addEntryFlow('quote') }, ['+ Textauszug']),
-        el('button', { class: 'btn', onclick: () => addEntryFlow('note') }, ['+ Notiz'])
+        el('button', { class: 'btn', onclick: () => addEntryFlow('note') }, ['+ Notiz']),
+        el('button', { class: 'btn', onclick: () => addEntryFlow('todo') }, ['+ Todo'])
       ]),
       el('div', { class: 'dropzone', id: 'dropzone', style: 'margin-top:10px;' }, ['Drop here'])
     ]);
@@ -1028,6 +1124,7 @@
     } else {
       for (const e of entries) {
         const isLink = e.type === 'link';
+        const isTodo = e.type === 'todo';
         const actions = el('div', { class: 'item__actions' }, [
           isLink && e.url
             ? el('button', { class: 'btn btn--xs btn--icon', title: 'Öffnen', 'aria-label': 'Öffnen', onclick: async (ev) => {
@@ -1055,7 +1152,8 @@
             el('span', { class: 'item__badge-wrap' }, [
               entryBadge(e.type)
             ]),
-            el('div', { class: 'item__title' }, [e.title || (isLink ? e.url : e.excerpt) || '(ohne Titel)'])
+            el('div', { class: 'item__title' }, [getEntryDisplayTitle(e)]),
+            isTodo ? el('div', { class: 'item__meta' }, [getTodoSummary(e)]) : null
           ])
         ]);
 
@@ -1380,7 +1478,7 @@
 
     const body = el('div', {}, [
       el('div', { class: 'subtle' }, ['Eintrag verschieben:']),
-      el('div', { class: 'item__title', style: 'margin-top:6px;' }, [entry.title || (entry.type === 'link' ? entry.url : entry.excerpt) || '(ohne Titel)']),
+      el('div', { class: 'item__title', style: 'margin-top:6px;' }, [getEntryDisplayTitle(entry)]),
       el('div', { class: 'field', style: 'margin-top:12px;' }, [
         el('div', { class: 'label' }, ['Zielthema']),
         select
@@ -1402,6 +1500,7 @@
     let titleInput = null;
     let urlInput = null;
     let excerptInput = null;
+    let todoEditor = null;
     const noteInput = el('textarea', { class: 'textarea', placeholder: 'Optionale Notiz' });
 
     const fields = [];
@@ -1433,6 +1532,13 @@
         el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Titel (optional)']), titleInput]),
         el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Notiz']), makeZoomableTextarea(noteInput, 'Notiz bearbeiten')])
       );
+    } else if (type === 'todo') {
+      titleInput = el('input', { class: 'input', placeholder: 'Titel (optional)', value: preset.title || '' });
+      todoEditor = createTodoEditor(preset.todos || []);
+      fields.push(
+        el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Titel (optional)']), titleInput]),
+        el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Todo-Liste']), todoEditor.root])
+      );
     } else if (type === 'link') {
       fields.push(
         el('div', { class: 'field', style: 'margin-top:10px;' }, [
@@ -1456,6 +1562,7 @@
           url: urlInput ? urlInput.value.trim() : '',
           excerpt: type === 'note' ? noteInput.value.trim() : (excerptInput ? excerptInput.value.trim() : ''),
           note: type === 'link' ? noteInput.value.trim() : '',
+          todos: type === 'todo' ? todoEditor?.getItems() || [] : [],
           sourcePageTitle: preset.sourcePageTitle || '',
           sourcePageUrl: preset.sourcePageUrl || ''
         };
@@ -1465,6 +1572,7 @@
           if (type === 'link') entry.title = entry.url;
           if (type === 'quote') entry.title = (entry.excerpt || '').slice(0, 60);
           if (type === 'note') entry.title = (entry.excerpt || '').slice(0, 60);
+          if (type === 'todo') entry.title = entry.todos[0]?.text || 'Todo-Liste';
         }
 
         // Duplicate hint for link URL
@@ -1482,12 +1590,13 @@
       } }, ['Speichern'])
     ]);
 
-    const title = type === 'link' ? 'Neuer Link' : type === 'quote' ? 'Neuer Textauszug' : 'Neue Notiz';
+    const title = type === 'link' ? 'Neuer Link' : type === 'quote' ? 'Neuer Textauszug' : type === 'todo' ? 'Neue Todo-Liste' : 'Neue Notiz';
     openModal({ title, body, footer });
 
     setTimeout(() => {
       if (urlInput) urlInput.focus();
       else if (excerptInput) excerptInput.focus();
+      else if (todoEditor) todoEditor.focusFirst();
       else titleInput?.focus();
     }, 50);
   }
@@ -1519,6 +1628,7 @@
     const titleInput = el('input', { class: 'input', value: entry.title || '' });
     const excerptInput = el('textarea', { class: 'textarea', value: entry.excerpt || '' });
     const noteInput = el('textarea', { class: 'textarea', value: entry.note || '' });
+    const todoEditor = entry.type === 'todo' ? createTodoEditor(entry.todos || []) : null;
 
     const body = el('div', {}, [
       el('div', { class: 'row' }, [
@@ -1546,10 +1656,17 @@
           ])
         : null,
 
-      entry.type !== 'link'
+      (entry.type !== 'link' && entry.type !== 'todo')
         ? el('div', { class: 'field', style: 'margin-top:10px;' }, [
             el('div', { class: 'label' }, [entry.type === 'quote' ? 'Textauszug' : 'Notiztext']),
             makeZoomableTextarea(excerptInput, entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten')
+          ])
+        : null,
+
+      entry.type === 'todo'
+        ? el('div', { class: 'field', style: 'margin-top:10px;' }, [
+            el('div', { class: 'label' }, ['Todo-Liste']),
+            todoEditor.root
           ])
         : null,
 
@@ -1584,8 +1701,9 @@
           const patch = {
             title: titleInput.value.trim(),
             url: entry.type === 'link' ? urlInput.value.trim() : entry.url,
-            excerpt: entry.type !== 'link' ? excerptInput.value.trim() : entry.excerpt,
-            note: entry.type === 'link' ? noteInput.value.trim() : entry.note
+            excerpt: (entry.type !== 'link' && entry.type !== 'todo') ? excerptInput.value.trim() : entry.excerpt,
+            note: entry.type === 'link' ? noteInput.value.trim() : entry.note,
+            todos: entry.type === 'todo' ? todoEditor.getItems() : entry.todos
           };
           await rbDB.updateEntry(state.db, entry.id, patch);
           markTopicSearchIndexDirty();

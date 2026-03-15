@@ -73,6 +73,7 @@
       linkText: entry.linkText || '',
       excerpt: entry.excerpt || '',
       note: entry.note || '',
+      todos: rbDB.normalizeTodoItems(entry.todos),
       position: Number.isFinite(entry.position) ? entry.position : 0,
       createdAt: entry.createdAt || '',
       updatedAt: entry.updatedAt || ''
@@ -324,6 +325,7 @@
         linkText: entry.linkText || '',
         excerpt: entry.excerpt || '',
         note: entry.note || '',
+        todos: rbDB.normalizeTodoItems(entry.todos),
         createdAt: entry.createdAt || rbDB.nowIso(),
         updatedAt: entry.updatedAt || rbDB.nowIso(),
         position: Number.isFinite(entry.position) ? entry.position : 1

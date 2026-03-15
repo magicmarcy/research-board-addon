@@ -602,6 +602,12 @@ select {
   background: #e7faf3;
 }
 
+.badge--todo {
+  color: #9a6700;
+  border-color: #f0d38c;
+  background: #fff5d6;
+}
+
 :root[data-theme="dark"] .badge--link {
   color: #b8d0ff;
   border-color: #355b9e;
@@ -618,6 +624,12 @@ select {
   color: #bff2df;
   border-color: #2f7a67;
   background: #16392f;
+}
+
+:root[data-theme="dark"] .badge--todo {
+  color: #ffe39c;
+  border-color: #8f6b1e;
+  background: #3a2f13;
 }
 
 .small,
@@ -719,6 +731,43 @@ select {
 
 .modal .textarea {
   min-height: 210px;
+}
+
+.todo-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.todo-editor__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(44vh, 420px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.todo-editor__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.todo-editor__item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.todo-editor__text {
+  min-width: 0;
+}
+
+.todo-editor__actions {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .modal .textarea--note-main {
@@ -866,11 +915,14 @@ select {
 
 .modal {
   width: min(560px, 100%);
+  max-height: calc(100vh - 28px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .modal__header {
@@ -888,7 +940,11 @@ select {
   flex: 1;
 }
 
-.modal__body { padding: 12px; }
+.modal__body {
+  padding: 12px;
+  overflow: auto;
+  min-height: 0;
+}
 
 .modal__footer {
   border-top: 1px solid var(--border);

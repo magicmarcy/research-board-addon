@@ -2,7 +2,7 @@
   Research Board DB (IndexedDB)
   Stores:
     - topics: { id, title, description?, color?, createdAt, updatedAt, archived, position }
-    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, createdAt, updatedAt, position }
+    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, todos?, createdAt, updatedAt, position }
     - backups: { id, createdAt, reason, signature, snapshot }
 */
 
@@ -41,6 +41,17 @@
   };
 
   const nowIso = () => new Date().toISOString();
+
+  function normalizeTodoItems(items) {
+    if (!Array.isArray(items)) return [];
+    return items
+      .map((item, index) => ({
+        id: item?.id || `todo-${index + 1}`,
+        text: String(item?.text || '').trim(),
+        done: !!item?.done
+      }))
+      .filter((item) => item.text);
+  }
 
   const uuid = () => {
     try {
@@ -390,6 +401,7 @@
       linkText: entryInput.linkText ?? '',
       excerpt: entryInput.excerpt ?? '',
       note: entryInput.note ?? '',
+      todos: normalizeTodoItems(entryInput.todos),
       createdAt,
       updatedAt: createdAt,
       position: typeof entryInput.position === 'number' ? entryInput.position : await getNextEntryPosition(db, topicId)
@@ -412,6 +424,7 @@
     const updated = {
       ...cur,
       ...patch,
+      todos: Object.prototype.hasOwnProperty.call(patch || {}, 'todos') ? normalizeTodoItems(patch.todos) : normalizeTodoItems(cur.todos),
       updatedAt: nowIso()
     };
 
@@ -722,6 +735,7 @@
     appSettingsKeys: APP_SETTINGS_KEYS,
     appSettingsDefaults: APP_SETTINGS_DEFAULTS,
     normalizeAppSettings,
+    normalizeTodoItems,
     exportAppSettings,
     applyImportedSettings,
     exportAll,
