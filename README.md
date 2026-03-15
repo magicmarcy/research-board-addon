@@ -25,9 +25,10 @@ Aktuelle Version: **1.4.8**
   - Klick auf Treffer öffnet direkt den passenden Eintrag im Thema
 - Eintragsdetails zeigen `Erstellt` und `Aktualisiert`
 - Import/Export als JSON:
-  - Gesamte Daten exportieren/importieren
-  - Einzelnes Thema exportieren
+  - Gesamte Daten exportieren/importieren, inklusive Einstellungen
+  - Einzelnes Thema exportieren, inklusive Einstellungen
   - Import-Modi: zusammenführen oder ersetzen
+  - Einstellungen beim Import optional mit übernehmen oder auslassen
 - Lokale Auto-Backups mit Intervall, Änderungstrigger, Start-Backup, manuellem Backup und Restore (inkl. Sicherheits-Backup vor Wiederherstellung)
 - Vollständig lokal, ohne externe Backend-Abhängigkeit
 

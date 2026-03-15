@@ -86,12 +86,7 @@
     const entries = Array.isArray(snapshot.entries)
       ? snapshot.entries.map(toComparableEntry).sort((a, b) => String(a.id).localeCompare(String(b.id)))
       : [];
-    const settings = snapshot.settings && typeof snapshot.settings === 'object'
-      ? {
-        includeArchived: !!snapshot.settings.includeArchived,
-        lastTopicId: snapshot.settings.lastTopicId || null
-      }
-      : { includeArchived: false, lastTopicId: null };
+    const settings = rbDB.normalizeAppSettings(snapshot.settings);
 
     return JSON.stringify({
       schemaVersion: Number(snapshot.schemaVersion) || 1,
@@ -359,11 +354,7 @@
 
     await replaceAllDataFromSnapshot(db, backup.snapshot);
 
-    if (backup.snapshot.settings && typeof backup.snapshot.settings === 'object') {
-      const includeArchived = !!backup.snapshot.settings.includeArchived;
-      const lastTopicId = backup.snapshot.settings.lastTopicId || null;
-      await ext.storage.local.set({ includeArchived, lastTopicId });
-    }
+    await rbDB.applyImportedSettings(backup.snapshot.settings);
 
     const newSignature = backup.signature || snapshotSignature(backup.snapshot);
     const changeState = await rbDB.getChangeState();

@@ -1560,6 +1560,7 @@
       el('option', { value: 'merge' }, ['Zusammenführen (empfohlen)']),
       el('option', { value: 'replace' }, ['Ersetzen (alles löschen)'])
     ]);
+    const importSettingsInput = el('input', { type: 'checkbox', checked: false, disabled: true });
 
     const status = el('div', { class: 'subtle', style: 'margin-top:10px;' }, ['Wähle eine Export-Datei (JSON).']);
 
@@ -1573,9 +1574,13 @@
         parsed = JSON.parse(text);
         const info = summarizeImport(parsed);
         status.textContent = info;
+        importSettingsInput.checked = !!(parsed && parsed.settings && typeof parsed.settings === 'object');
+        importSettingsInput.disabled = !(parsed && parsed.settings && typeof parsed.settings === 'object');
       } catch (e) {
         parsed = null;
         status.textContent = 'Fehler: Datei konnte nicht gelesen/parsebar gemacht werden.';
+        importSettingsInput.checked = false;
+        importSettingsInput.disabled = true;
       }
     });
 
@@ -1587,6 +1592,12 @@
       el('div', { class: 'field', style: 'margin-top:10px;' }, [
         el('div', { class: 'label' }, ['Modus']),
         modeSelect
+      ]),
+      el('div', { class: 'field', style: 'margin-top:10px;' }, [
+        el('label', { class: 'checkbox-label' }, [
+          importSettingsInput,
+          el('span', {}, ['Einstellungen mit importieren'])
+        ])
       ]),
       status,
       el('div', { class: 'card', style: 'margin-top:12px; background: color-mix(in oklab, var(--surface) 75%, var(--bg));' }, [
@@ -1604,7 +1615,7 @@
           return;
         }
         const mode = modeSelect.value;
-        await importData(parsed, mode);
+        await importData(parsed, mode, { importSettings: importSettingsInput.checked });
         markTopicSearchIndexDirty();
         closeModal();
         toast('Import abgeschlossen');
@@ -1624,15 +1635,15 @@
     if (obj.schemaVersion !== 1) return 'Hinweis: Unbekannte schemaVersion.';
 
     if (Array.isArray(obj.topics) && Array.isArray(obj.entries)) {
-      return `Gefunden: ${obj.topics.length} Themen, ${obj.entries.length} Einträge.`;
+      return `Gefunden: ${obj.topics.length} Themen, ${obj.entries.length} Einträge${obj.settings ? ', Einstellungen vorhanden' : ''}.`;
     }
     if (obj.topic && Array.isArray(obj.entries)) {
-      return `Gefunden: 1 Thema („${obj.topic.title || 'ohne Titel'}“), ${obj.entries.length} Einträge.`;
+      return `Gefunden: 1 Thema („${obj.topic.title || 'ohne Titel'}“), ${obj.entries.length} Einträge${obj.settings ? ', Einstellungen vorhanden' : ''}.`;
     }
     return 'Format erkannt, aber Inhalte sind unvollständig.';
   }
 
-  async function importData(obj, mode) {
+  async function importData(obj, mode, { importSettings = true } = {}) {
     if (!obj || typeof obj !== 'object') throw new Error('Invalid');
 
     // Normalize to full import shape.
@@ -1653,8 +1664,17 @@
       await rbDB.clearAll(state.db);
       await bulkInsert(topics, entries, { keepIds: true });
       const first = topics.find(t => !t.archived) || topics[0];
-      state.currentTopicId = first?.id ?? null;
-      await saveSettings({ lastTopicId: state.currentTopicId });
+      if (importSettings && obj.settings && typeof obj.settings === 'object') {
+        const importedSettings = rbDB.normalizeAppSettings(obj.settings);
+        const nextTopicId = importedSettings.lastTopicId || first?.id || null;
+        await rbDB.applyImportedSettings(importedSettings, { lastTopicId: nextTopicId });
+        state.currentTopicId = nextTopicId;
+        state.includeArchived = importedSettings.includeArchived;
+        applyTheme(importedSettings.themeMode);
+      } else {
+        state.currentTopicId = first?.id ?? null;
+        await saveSettings({ lastTopicId: state.currentTopicId });
+      }
       return;
     }
 
@@ -1691,6 +1711,17 @@
       });
 
     await bulkInsert(newTopics, newEntries, { keepIds: true });
+
+    if (importSettings && obj.settings && typeof obj.settings === 'object') {
+      const importedSettings = rbDB.normalizeAppSettings(obj.settings);
+      const mappedLastTopicId = importedSettings.lastTopicId
+        ? (idMapTopic.get(importedSettings.lastTopicId) || null)
+        : undefined;
+      await rbDB.applyImportedSettings(importedSettings, { lastTopicId: mappedLastTopicId });
+      state.includeArchived = importedSettings.includeArchived;
+      if (mappedLastTopicId) state.currentTopicId = mappedLastTopicId;
+      applyTheme(importedSettings.themeMode);
+    }
   }
 
   async function bulkInsert(topics, entries, { keepIds }) {

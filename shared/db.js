@@ -16,6 +16,29 @@
     changedAt: 'rbDataLastChangedAt',
     signal: 'rbDataChangeSignal'
   };
+  const APP_SETTINGS_KEYS = {
+    lastTopicId: 'lastTopicId',
+    includeArchived: 'includeArchived',
+    themeMode: 'themeMode',
+    autoBackupConfig: 'rbAutoBackupConfig',
+    urlTransformConfig: 'urlTransformConfig'
+  };
+  const APP_SETTINGS_DEFAULTS = {
+    [APP_SETTINGS_KEYS.lastTopicId]: null,
+    [APP_SETTINGS_KEYS.includeArchived]: false,
+    [APP_SETTINGS_KEYS.themeMode]: 'light',
+    [APP_SETTINGS_KEYS.autoBackupConfig]: {
+      enabled: true,
+      intervalMinutes: 60
+    },
+    [APP_SETTINGS_KEYS.urlTransformConfig]: {
+      enabled: false,
+      sourceUrlPattern: '',
+      titleIdRegex: '#(\\d+)',
+      targetUrlTemplate: '',
+      idPlaceholder: '{value}'
+    }
+  };
 
   const nowIso = () => new Date().toISOString();
 
@@ -466,6 +489,50 @@
     await touchChangeToken();
   }
 
+  function normalizeAppSettings(raw = {}) {
+    const input = raw && typeof raw === 'object' ? raw : {};
+    const autoBackupConfigRaw = input[APP_SETTINGS_KEYS.autoBackupConfig];
+    const urlTransformConfigRaw = input[APP_SETTINGS_KEYS.urlTransformConfig];
+    return {
+      [APP_SETTINGS_KEYS.lastTopicId]: input[APP_SETTINGS_KEYS.lastTopicId] || null,
+      [APP_SETTINGS_KEYS.includeArchived]: !!input[APP_SETTINGS_KEYS.includeArchived],
+      [APP_SETTINGS_KEYS.themeMode]: input[APP_SETTINGS_KEYS.themeMode] === 'dark' ? 'dark' : 'light',
+      [APP_SETTINGS_KEYS.autoBackupConfig]: {
+        enabled: autoBackupConfigRaw?.enabled ?? APP_SETTINGS_DEFAULTS[APP_SETTINGS_KEYS.autoBackupConfig].enabled,
+        intervalMinutes: Number.isFinite(Number(autoBackupConfigRaw?.intervalMinutes))
+          ? Math.max(5, Math.min(10080, Math.round(Number(autoBackupConfigRaw.intervalMinutes))))
+          : APP_SETTINGS_DEFAULTS[APP_SETTINGS_KEYS.autoBackupConfig].intervalMinutes
+      },
+      [APP_SETTINGS_KEYS.urlTransformConfig]: {
+        enabled: !!urlTransformConfigRaw?.enabled,
+        sourceUrlPattern: String(urlTransformConfigRaw?.sourceUrlPattern || ''),
+        titleIdRegex: String(
+          urlTransformConfigRaw?.titleIdRegex ||
+          APP_SETTINGS_DEFAULTS[APP_SETTINGS_KEYS.urlTransformConfig].titleIdRegex
+        ),
+        targetUrlTemplate: String(urlTransformConfigRaw?.targetUrlTemplate || ''),
+        idPlaceholder: String(
+          urlTransformConfigRaw?.idPlaceholder ||
+          APP_SETTINGS_DEFAULTS[APP_SETTINGS_KEYS.urlTransformConfig].idPlaceholder
+        )
+      }
+    };
+  }
+
+  async function exportAppSettings() {
+    const values = await ext.storage.local.get(APP_SETTINGS_DEFAULTS);
+    return normalizeAppSettings(values);
+  }
+
+  async function applyImportedSettings(rawSettings = {}, { lastTopicId = undefined } = {}) {
+    const settings = normalizeAppSettings(rawSettings);
+    if (lastTopicId !== undefined) {
+      settings[APP_SETTINGS_KEYS.lastTopicId] = lastTopicId || null;
+    }
+    await ext.storage.local.set(settings);
+    return settings;
+  }
+
   async function exportAll(db) {
     const topics = await getAllTopics(db, { includeArchived: true });
     const entries = await (async () => {
@@ -474,7 +541,7 @@
       return reqToPromise(store.getAll());
     })();
 
-    const settings = await ext.storage.local.get({ lastTopicId: null, includeArchived: false });
+    const settings = await exportAppSettings();
 
     return {
       schemaVersion: 1,
@@ -490,11 +557,13 @@
     const topic = await getTopic(db, topicId);
     if (!topic) throw new Error('Topic not found');
     const entries = await getEntriesByTopic(db, topicId);
+    const settings = await exportAppSettings();
 
     return {
       schemaVersion: 1,
       exportedAt: nowIso(),
       app: { name: 'Research Board (Local)', version: '1.0.0' },
+      settings,
       topic,
       entries
     };
@@ -589,6 +658,11 @@
     putBackups,
     deleteBackup,
     clearBackups,
+    appSettingsKeys: APP_SETTINGS_KEYS,
+    appSettingsDefaults: APP_SETTINGS_DEFAULTS,
+    normalizeAppSettings,
+    exportAppSettings,
+    applyImportedSettings,
     exportAll,
     exportTopic
   };
