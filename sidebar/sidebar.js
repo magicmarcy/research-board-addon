@@ -204,12 +204,15 @@
   function closeDropdown() {
     ui.dropdown.classList.add('hidden');
     ui.dropdown.innerHTML = '';
+    ui.dropdown.style.left = '';
+    ui.dropdown.style.top = '';
+    ui.dropdown.style.right = '';
   }
 
-  function openDropdown(items) {
+  function openDropdown(items, { anchorX = null, anchorY = null } = {}) {
     ui.dropdown.innerHTML = '';
     for (const it of items) {
-      const node = el('div', { class: 'dropitem', role: 'menuitem' }, [
+      const node = el('div', { class: `dropitem${it.danger ? ' dropitem--danger' : ''}`, role: 'menuitem' }, [
         el('div', {}, [it.label]),
         it.hint ? el('div', { class: 'dropitem__hint' }, [it.hint]) : null
       ]);
@@ -220,6 +223,19 @@
       ui.dropdown.appendChild(node);
     }
     ui.dropdown.classList.remove('hidden');
+    if (Number.isFinite(anchorX) && Number.isFinite(anchorY)) {
+      const viewportPad = 12;
+      const rect = ui.dropdown.getBoundingClientRect();
+      const maxLeft = Math.max(viewportPad, window.innerWidth - rect.width - viewportPad);
+      const maxTop = Math.max(viewportPad, window.innerHeight - rect.height - viewportPad);
+      ui.dropdown.style.left = `${Math.min(Math.max(viewportPad, anchorX), maxLeft)}px`;
+      ui.dropdown.style.top = `${Math.min(Math.max(viewportPad, anchorY), maxTop)}px`;
+      ui.dropdown.style.right = 'auto';
+      return;
+    }
+    ui.dropdown.style.left = '';
+    ui.dropdown.style.top = '';
+    ui.dropdown.style.right = '';
   }
 
   function openModal({ title, body, footer }) {
@@ -873,28 +889,11 @@
       for (const t of topics) {
         const statusHint = el('span', { class: 'item__meta topic__status' }, [t.archived ? 'Archiv' : '']);
         const updatedHint = el('span', { class: 'item__meta topic__updated' }, [formatDate(t.updatedAt || t.createdAt)]);
-        const actions = el('div', { class: 'item__actions' }, [
-          el('button', { class: 'btn btn--xs btn--icon', title: 'Bearbeiten', 'aria-label': 'Bearbeiten', onclick: async (ev) => {
-            ev.stopPropagation();
-            await editTopicFlow(t.id);
-          } }, ['✎']),
-          el('button', { class: 'btn btn--xs btn--icon', title: t.archived ? 'Wiederherstellen' : 'Archivieren', 'aria-label': t.archived ? 'Wiederherstellen' : 'Archivieren', onclick: async (ev) => {
-            ev.stopPropagation();
-            await archiveTopicFlow(t.id, !t.archived);
-          } }, [t.archived ? '↺' : '🗃']),
-          el('button', { class: 'btn btn--xs btn--icon btn--danger', title: 'Löschen', 'aria-label': 'Löschen', onclick: async (ev) => {
-            ev.stopPropagation();
-            await deleteTopicFlow(t.id);
-          } }, ['✕'])
-        ]);
         const node = el('div', {
           class: 'item item--topic',
           draggable: 'true',
           dataset: { id: t.id, kind: 'topic' }
         }, [
-          el('div', { class: 'item__hover-tools' }, [
-            actions
-          ]),
           el('div', { class: 'item__row' }, [
             el('div', { class: 'item__title' }, [t.title]),
             statusHint,
@@ -904,9 +903,38 @@
         ]);
 
         node.addEventListener('click', () => openTopic(t.id));
+        node.addEventListener('contextmenu', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openDropdown([
+            {
+              label: 'Bearbeiten',
+              onClick: async () => {
+                await editTopicFlow(t.id);
+              }
+            },
+            {
+              label: t.archived ? 'Wiederherstellen' : 'Archivieren',
+              onClick: async () => {
+                await archiveTopicFlow(t.id, !t.archived);
+              }
+            },
+            {
+              label: 'Löschen',
+              danger: true,
+              onClick: async () => {
+                await deleteTopicFlow(t.id);
+              }
+            }
+          ], {
+            anchorX: ev.clientX,
+            anchorY: ev.clientY
+          });
+        });
 
         // Topic reorder drag
         node.addEventListener('dragstart', (ev) => {
+          closeDropdown();
           state.drag = { type: 'topic', id: t.id };
           ev.dataTransfer.effectAllowed = 'move';
           ev.dataTransfer.setData('text/plain', t.id);
@@ -1012,15 +1040,7 @@
                 ev.stopPropagation();
                 openEntryNotePopupDirect(e, ev.currentTarget);
               } }, ['⤢'])
-            : null,
-          el('button', { class: 'btn btn--xs btn--icon', title: 'Bearbeiten', 'aria-label': 'Bearbeiten', onclick: (ev) => {
-            ev.stopPropagation();
-            openEntry(e);
-          } }, ['✎']),
-          el('button', { class: 'btn btn--xs btn--icon btn--danger', title: 'Löschen', 'aria-label': 'Löschen', onclick: async (ev) => {
-            ev.stopPropagation();
-            await deleteEntryWithUndo(e);
-          } }, ['🗑'])
+            : null
         ]);
 
         const node = el('div', {
@@ -1040,9 +1060,40 @@
         ]);
 
         node.addEventListener('click', () => openEntry(e));
+        node.addEventListener('contextmenu', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openDropdown([
+            {
+              label: 'Bearbeiten',
+              onClick: async () => {
+                openEntry(e);
+              }
+            },
+            {
+              label: 'Verschieben',
+              hint: 'In anderes Thema',
+              onClick: async () => {
+                await moveEntryFlow(e.id);
+              }
+            },
+            {
+              label: 'Löschen',
+              hint: 'Mit Rückgängig-Option',
+              danger: true,
+              onClick: async () => {
+                await deleteEntryWithUndo(e);
+              }
+            }
+          ], {
+            anchorX: ev.clientX,
+            anchorY: ev.clientY
+          });
+        });
 
         // Reorder drag
         node.addEventListener('dragstart', (ev) => {
+          closeDropdown();
           state.drag = { type: 'entry', id: e.id };
           ev.dataTransfer.effectAllowed = 'move';
           ev.dataTransfer.setData('text/plain', e.id);
@@ -1288,6 +1339,60 @@
       confirmDeleteBtn
     ]);
     openModal({ title: 'Löschen', body, footer });
+  }
+
+  async function moveEntryFlow(entryId) {
+    const entry = state.entries.find((item) => item.id === entryId);
+    if (!entry) return;
+
+    const targetTopics = state.topicsAll.filter((topic) => topic.id !== entry.topicId);
+    if (!targetTopics.length) {
+      toast('Kein anderes Thema verfügbar');
+      return;
+    }
+
+    const select = el('select', { class: 'select' }, [
+      el('option', { value: '', selected: true, disabled: true }, ['Zielthema auswählen']),
+      ...targetTopics.map((topic) => el('option', { value: topic.id }, [topic.archived ? `${topic.title} (Archiv)` : topic.title]))
+    ]);
+    let pending = false;
+
+    select.addEventListener('change', async () => {
+      const targetTopicId = select.value;
+      if (!targetTopicId || pending) return;
+      pending = true;
+      select.disabled = true;
+      try {
+        const targetTopic = targetTopics.find((topic) => topic.id === targetTopicId);
+        await rbDB.moveEntryToTopic(state.db, entry.id, targetTopicId);
+        markTopicSearchIndexDirty();
+        closeModal();
+        await refreshTopics();
+        await render();
+        toast(`Verschoben nach „${targetTopic?.title || 'Thema'}“`);
+      } catch (error) {
+        console.error(error);
+        select.disabled = false;
+        pending = false;
+        toast('Verschieben fehlgeschlagen');
+      }
+    });
+
+    const body = el('div', {}, [
+      el('div', { class: 'subtle' }, ['Eintrag verschieben:']),
+      el('div', { class: 'item__title', style: 'margin-top:6px;' }, [entry.title || (entry.type === 'link' ? entry.url : entry.excerpt) || '(ohne Titel)']),
+      el('div', { class: 'field', style: 'margin-top:12px;' }, [
+        el('div', { class: 'label' }, ['Zielthema']),
+        select
+      ])
+    ]);
+
+    const footer = el('div', { class: 'actions' }, [
+      el('button', { class: 'btn btn--ghost', onclick: closeModal }, ['Abbrechen'])
+    ]);
+
+    openModal({ title: 'Eintrag verschieben', body, footer });
+    setTimeout(() => select.focus(), 30);
   }
 
   async function addEntryFlow(type, preset = {}) {
@@ -2142,6 +2247,10 @@
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
+      if (!ui.dropdown.classList.contains('hidden')) {
+        closeDropdown();
+        return;
+      }
       if (!ui.modalOverlay.classList.contains('hidden')) {
         closeModal();
         return;

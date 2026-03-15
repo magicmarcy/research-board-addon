@@ -554,13 +554,6 @@ select {
   position: relative;
 }
 
-.item--topic .item__actions {
-  opacity: 0;
-  pointer-events: none;
-  margin-left: 0;
-  transition: opacity 120ms ease;
-}
-
 .topic__status {
   margin-left: 8px;
 }
@@ -569,69 +562,11 @@ select {
   margin-left: auto;
   text-align: right;
   white-space: nowrap;
-  transition: opacity 120ms ease;
-}
-
-.item--topic .item__hover-tools {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 6px 10px;
-  z-index: 2;
-  background: linear-gradient(
-    to right,
-    color-mix(in oklab, var(--surface2) 4%, transparent) 0%,
-    color-mix(in oklab, var(--surface2) 14%, transparent) 38%,
-    color-mix(in oklab, var(--surface2) 62%, transparent) 68%,
-    color-mix(in oklab, var(--surface2) 98%, transparent) 88%,
-    color-mix(in oklab, var(--surface2) 100%, transparent) 100%
-  );
-  backdrop-filter: blur(0.5px);
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: var(--radius);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-2px);
-  transition: opacity 120ms ease, transform 120ms ease;
-}
-
-.item--topic:hover .item__hover-tools,
-.item--topic:focus-within .item__hover-tools {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.item--topic:hover .item__actions,
-.item--topic:focus-within .item__actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.item--topic:hover .topic__updated,
-.item--topic:focus-within .topic__updated {
-  opacity: 0;
 }
 
 @media (hover: none) {
-  .item--topic .item__hover-tools {
+  .topic__updated {
     opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-  }
-
-  .item--topic .item__actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .item--topic .topic__updated {
-    opacity: 0;
   }
 }
 
@@ -902,6 +837,18 @@ select {
 
 .dropitem:hover {
   background: color-mix(in oklab, var(--accent-weak) 36%, var(--surface));
+}
+
+.dropitem--danger {
+  color: var(--danger);
+}
+
+.dropitem--danger .dropitem__hint {
+  color: color-mix(in oklab, var(--danger) 72%, var(--muted));
+}
+
+.dropitem--danger:hover {
+  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
 }
 
 .dropitem__hint { color: var(--muted); font-size: 11px; }

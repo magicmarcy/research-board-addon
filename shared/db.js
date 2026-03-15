@@ -434,6 +434,66 @@
     await touchChangeToken();
   }
 
+  async function moveEntryToTopic(db, entryId, targetTopicId) {
+    if (!entryId) throw new Error('Entry id required');
+    if (!targetTopicId) throw new Error('Target topic id required');
+
+    const tx = db.transaction(['entries', 'topics'], 'readwrite');
+    const entriesStore = tx.objectStore('entries');
+    const topicsStore = tx.objectStore('topics');
+    const entry = await reqToPromise(entriesStore.get(entryId));
+    if (!entry) throw new Error('Entry not found');
+    if (entry.topicId === targetTopicId) throw new Error('Entry already in target topic');
+
+    const targetTopic = await reqToPromise(topicsStore.get(targetTopicId));
+    if (!targetTopic) throw new Error('Target topic not found');
+
+    let nextPosition = 1;
+    try {
+      const idx = entriesStore.index('by_topic_position');
+      const range = IDBKeyRange.bound([targetTopicId, MIN_POSITION], [targetTopicId, MAX_POSITION]);
+      nextPosition = await new Promise((resolve, reject) => {
+        const cursorReq = idx.openCursor(range, 'prev');
+        cursorReq.onsuccess = () => {
+          const cur = cursorReq.result;
+          if (!cur) {
+            resolve(1);
+            return;
+          }
+          const pos = Number.isFinite(cur.value?.position) ? cur.value.position : 0;
+          resolve(pos + 1);
+        };
+        cursorReq.onerror = () => reject(cursorReq.error);
+      });
+    } catch (error) {
+      if (!isDataError(error)) throw error;
+      const all = await reqToPromise(entriesStore.getAll());
+      const targetEntries = all.filter((item) => item?.topicId === targetTopicId);
+      const maxPos = targetEntries.reduce((max, item) => (
+        Number.isFinite(item?.position) && item.position > max ? item.position : max
+      ), 0);
+      nextPosition = maxPos + 1;
+    }
+
+    const updated = {
+      ...entry,
+      topicId: targetTopicId,
+      position: nextPosition,
+      updatedAt: nowIso()
+    };
+
+    await reqToPromise(entriesStore.put(updated));
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+    await touchChangeToken();
+
+    return updated;
+  }
+
   async function reorderTopics(db, orderedTopicIds) {
     const tx = db.transaction(['topics'], 'readwrite');
     const store = tx.objectStore('topics');
@@ -649,6 +709,7 @@
     addEntry,
     updateEntry,
     deleteEntry,
+    moveEntryToTopic,
     reorderTopics,
     reorderEntries,
     clearAll,
