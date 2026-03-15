@@ -1631,16 +1631,17 @@
     const todoEditor = entry.type === 'todo' ? createTodoEditor(entry.todos || []) : null;
 
     const body = el('div', {}, [
-      el('div', { class: 'row' }, [
-        el('div', { class: 'field' }, [
-          el('div', { class: 'label' }, ['Typ']),
-          el('div', {}, [entryBadge(entry.type)])
-        ]),
-        el('div', { class: 'field' }, [
-          el('div', { class: 'label' }, ['Erstellt']),
-          el('div', { class: 'small' }, [formatDate(entry.createdAt)]),
-          el('div', { class: 'label', style: 'margin-top:8px;' }, ['Aktualisiert']),
-          el('div', { class: 'small' }, [formatDate(entry.updatedAt || entry.createdAt)])
+      el('div', { class: 'entry-meta' }, [
+        el('div', { class: 'entry-meta__item entry-meta__item--badge' }, [entryBadge(entry.type)]),
+        el('div', { class: 'entry-meta__dates' }, [
+          el('div', { class: 'entry-meta__item', title: 'Erstellt' }, [
+            el('span', { class: 'entry-meta__icon', 'aria-hidden': 'true' }, ['◷']),
+            el('span', { class: 'small' }, [formatDate(entry.createdAt)])
+          ]),
+          el('div', { class: 'entry-meta__item', title: 'Aktualisiert' }, [
+            el('span', { class: 'entry-meta__icon', 'aria-hidden': 'true' }, ['↻']),
+            el('span', { class: 'small' }, [formatDate(entry.updatedAt || entry.createdAt)])
+          ])
         ])
       ]),
 
