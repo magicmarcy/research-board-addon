@@ -1424,9 +1424,3 @@
       toast('Einstellungen konnten nicht geöffnet werden');
     }
   }
-
-  /**
-   * Render the topic overview including search results, topic cards, and footer actions.
-   *
-   * @returns {void}
-   */
