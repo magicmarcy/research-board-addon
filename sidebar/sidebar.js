@@ -1,5 +1,45 @@
 (() => {
+  /**
+   * Research Board sidebar runtime.
+   *
+   * This file owns the interactive sidebar application shown inside Firefox.
+   * It coordinates:
+   * - sidebar-level UI state such as the active view, selected topic, search input,
+   *   keyboard navigation, drag state, and modal/dropdown visibility
+   * - IndexedDB-backed topic and entry loading through `rbDB`
+   * - rendering for the topic overview and topic detail screens
+   * - entry creation, editing, moving, archiving, importing, exporting, and undo flows
+   * - browser-extension messaging for pending captures, background-triggered refreshes,
+   *   and convenience actions such as opening URLs in new tabs
+   *
+   * The sidebar intentionally acts as the main application shell for user-facing
+   * workflows, while the background script owns browser integration and lifecycle
+   * orchestration. The goal in this file is to keep state transitions explicit and
+   * render updates predictable even though many features share the same surface.
+   */
+  /**
+   * Resolve a single DOM node from the current sidebar document.
+   *
+   * @param {string} sel CSS selector.
+   * @returns {Element|null} Matching DOM node, if found.
+   */
   const $ = (sel) => document.querySelector(sel);
+  /**
+   * Small DOM factory used throughout the sidebar to keep rendering imperative but compact.
+   *
+   * Supported special attributes:
+   * - `class`
+   * - `dataset`
+   * - `value`
+   * - `checked`
+   * - `selected`
+   * - event handlers via `on*`
+   *
+   * @param {string} tag HTML tag name.
+   * @param {object} [attrs={}] Element attributes and event handlers.
+   * @param {Array<Node|string>|Node|string|null} [children=[]] Child nodes or text.
+   * @returns {HTMLElement} Constructed DOM node.
+   */
   const el = (tag, attrs = {}, children = []) => {
     const n = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs)) {
@@ -21,6 +61,7 @@
     return n;
   };
 
+  // Central in-memory application state for the sidebar runtime.
   const state = {
     db: null,
     includeArchived: false,
@@ -46,6 +87,7 @@
   };
   const THEME_MODE_KEY = 'themeMode';
 
+  // Cached DOM references used across renders and event handlers.
   const ui = {
     app: $('#app'),
     main: $('#main'),
@@ -76,6 +118,12 @@
   };
   let toastTimerId = null;
 
+  /**
+   * Apply the requested light/dark theme to the sidebar root and update the toggle affordance.
+   *
+   * @param {string} mode Requested theme mode.
+   * @returns {string} Normalized theme mode that was applied.
+   */
   function applyTheme(mode) {
     const next = mode === 'dark' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
@@ -87,6 +135,11 @@
     return next;
   }
 
+  /**
+   * Load the persisted theme setting and bind the theme toggle button.
+   *
+   * @returns {Promise<void>}
+   */
   async function initTheme() {
     const settings = await ext.storage.local.get({ [THEME_MODE_KEY]: 'light' });
     let mode = applyTheme(settings?.[THEME_MODE_KEY]);
@@ -97,6 +150,12 @@
     });
   }
 
+  /**
+   * Show a short-lived toast message.
+   *
+   * @param {string} msg User-visible message text.
+   * @returns {void}
+   */
   function toast(msg) {
     if (toastTimerId) {
       clearTimeout(toastTimerId);
@@ -111,6 +170,11 @@
     }, 1600);
   }
 
+  /**
+   * Immediately remove any currently visible toast.
+   *
+   * @returns {void}
+   */
   function hideToastNow() {
     if (toastTimerId) {
       clearTimeout(toastTimerId);
@@ -120,6 +184,13 @@
     ui.toast.innerHTML = '';
   }
 
+  /**
+   * Show an undo-capable toast with a timeout and progress indicator.
+   *
+   * @param {string} message User-visible message text.
+   * @param {{ durationMs?: number, onUndo?: (() => Promise<void>|void) }} [options={}] Undo configuration.
+   * @returns {void}
+   */
   function showUndoToast(message, { durationMs = 6000, onUndo } = {}) {
     hideToastNow();
 
@@ -151,6 +222,12 @@
     }, durationMs);
   }
 
+  /**
+   * Delete an entry and offer an undo action that recreates its previous snapshot.
+   *
+   * @param {object} entry Entry record to delete.
+   * @returns {Promise<void>}
+   */
   async function deleteEntryWithUndo(entry) {
     const snapshot = { ...entry };
     await rbDB.deleteEntry(state.db, entry.id);
@@ -181,6 +258,12 @@
     });
   }
 
+  /**
+   * Delete a topic and all of its entries, then offer an undo action that restores both.
+   *
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<void>}
+   */
   async function deleteTopicWithUndo(topicId) {
     const topic = await rbDB.getTopic(state.db, topicId);
     if (!topic) return;
@@ -203,6 +286,11 @@
     });
   }
 
+  /**
+   * Hide and clear the shared dropdown menu.
+   *
+   * @returns {void}
+   */
   function closeDropdown() {
     ui.dropdown.classList.add('hidden');
     ui.dropdown.innerHTML = '';
@@ -211,6 +299,13 @@
     ui.dropdown.style.right = '';
   }
 
+  /**
+   * Render and position the shared dropdown menu.
+   *
+   * @param {Array<{ label: string, hint?: string, danger?: boolean, onClick?: Function }>} items Dropdown items.
+   * @param {{ anchorX?: number|null, anchorY?: number|null }} [options={}] Screen anchor coordinates.
+   * @returns {void}
+   */
   function openDropdown(items, { anchorX = null, anchorY = null } = {}) {
     ui.dropdown.innerHTML = '';
     for (const it of items) {
@@ -240,6 +335,12 @@
     ui.dropdown.style.right = '';
   }
 
+  /**
+   * Open the shared modal shell with provided content fragments.
+   *
+   * @param {{ title: string, body?: Node|null, footer?: Node|null }} config Modal fragments.
+   * @returns {void}
+   */
   function openModal({ title, body, footer }) {
     ui.modalTitle.textContent = title;
     ui.modalBody.innerHTML = '';
@@ -251,6 +352,13 @@
     ui.modalOverlay.setAttribute('aria-hidden', 'false');
   }
 
+  /**
+   * Wrap a textarea with the sidebar's popup-expansion affordance.
+   *
+   * @param {HTMLTextAreaElement} textarea Source textarea.
+   * @param {string} popupTitle Popup window title.
+   * @returns {HTMLDivElement} Wrapper containing textarea and zoom button.
+   */
   function makeZoomableTextarea(textarea, popupTitle) {
     const wrap = el('div', { class: 'textarea-zoom-wrap' }, [textarea]);
     const zoomBtn = el('button', {
@@ -271,6 +379,12 @@
     return wrap;
   }
 
+  /**
+   * Open a detached popup editor for a textarea used inside the sidebar or a modal dialog.
+   *
+   * @param {{ title?: string, sourceTextarea: HTMLTextAreaElement }} config Popup configuration.
+   * @returns {void}
+   */
   function openTextareaPopup({ title, sourceTextarea }) {
     if (!sourceTextarea) return;
 
@@ -351,6 +465,13 @@
     };
   }
 
+  /**
+   * Open the dedicated note/quote popup editor directly from an entry row.
+   *
+   * @param {object} entry Entry record to edit.
+   * @param {HTMLElement|null} triggerButton Source control used to launch the popup.
+   * @returns {void}
+   */
   function openEntryNotePopupDirect(entry, triggerButton) {
     if (!entry || (entry.type !== 'note' && entry.type !== 'quote')) return;
 
@@ -425,6 +546,11 @@
     };
   }
 
+  /**
+   * Close and reset the shared modal shell.
+   *
+   * @returns {void}
+   */
   function closeModal() {
     ui.modalOverlay.classList.add('hidden');
     ui.modalOverlay.setAttribute('aria-hidden', 'true');
@@ -434,6 +560,12 @@
     state.popupKeepModalOpenOnNextSave = false;
   }
 
+  /**
+   * Detect whether a keyboard event target is an editable control that should keep native key handling.
+   *
+   * @param {EventTarget|null} target Event target.
+   * @returns {boolean} `true` when the target should suppress global keyboard navigation.
+   */
   function isEditableTarget(target) {
     if (!target) return false;
     if (target.isContentEditable) return true;
@@ -444,6 +576,11 @@
     return !['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file'].includes(type);
   }
 
+  /**
+   * Return the list nodes currently participating in keyboard navigation.
+   *
+   * @returns {HTMLElement[]} Navigable sidebar items for the active screen.
+   */
   function getNavigableNodes() {
     let selector = '#topicsList .item';
     if (state.view === 'topic') {
@@ -454,12 +591,23 @@
     return Array.from(document.querySelectorAll(selector));
   }
 
+  /**
+   * Remove the keyboard-active state from all navigable items.
+   *
+   * @returns {void}
+   */
   function clearKbdActive() {
     for (const node of document.querySelectorAll('.item--kbd-active')) {
       node.classList.remove('item--kbd-active');
     }
   }
 
+  /**
+   * Resolve the currently active keyboard-navigation index against the rendered node list.
+   *
+   * @param {HTMLElement[]} nodes Navigable nodes.
+   * @returns {number} Active index, or `-1` when no valid active item exists.
+   */
   function resolveKbdIndex(nodes) {
     if (!nodes.length) return -1;
     const byStored = Number.isInteger(state.kbdNav.index) ? state.kbdNav.index : -1;
@@ -474,6 +622,13 @@
     return -1;
   }
 
+  /**
+   * Mark a navigable item as keyboard-active and optionally scroll it into view.
+   *
+   * @param {number} nextIndex Target index.
+   * @param {{ scroll?: boolean }} [options={}] Scroll behavior.
+   * @returns {boolean} `true` when an item was activated.
+   */
   function setKbdActiveIndex(nextIndex, { scroll = true } = {}) {
     const nodes = getNavigableNodes();
     clearKbdActive();
@@ -489,6 +644,11 @@
     return true;
   }
 
+  /**
+   * Reconcile keyboard-navigation state with the latest render output.
+   *
+   * @returns {void}
+   */
   function syncKbdActiveAfterRender() {
     const nodes = getNavigableNodes();
     if (!nodes.length) {
@@ -505,6 +665,12 @@
     setKbdActiveIndex(idx, { scroll: false });
   }
 
+  /**
+   * Move keyboard selection by a relative offset.
+   *
+   * @param {number} delta Relative movement.
+   * @returns {boolean} `true` when selection changed.
+   */
   function moveKbdSelection(delta) {
     const nodes = getNavigableNodes();
     if (!nodes.length) return false;
@@ -513,6 +679,11 @@
     return setKbdActiveIndex(base + delta);
   }
 
+  /**
+   * Activate the currently keyboard-selected item.
+   *
+   * @returns {boolean} `true` when a node was activated.
+   */
   function activateKbdSelection() {
     const nodes = getNavigableNodes();
     if (!nodes.length) return false;
@@ -524,6 +695,12 @@
     return !!node;
   }
 
+  /**
+   * Format an ISO timestamp for compact display in the sidebar.
+   *
+   * @param {string} iso ISO timestamp.
+   * @returns {string} Localized date/time string.
+   */
   function formatDate(iso) {
     if (!iso) return '';
     try {
@@ -534,6 +711,12 @@
     }
   }
 
+  /**
+   * Create the badge element used to visualize an entry type.
+   *
+   * @param {string} type Entry type.
+   * @returns {HTMLElement} Badge element.
+   */
   function entryBadge(type) {
     if (type === 'link') return el('span', { class: 'badge badge--link' }, ['Link']);
     if (type === 'quote') return el('span', { class: 'badge badge--quote' }, ['Text']);
@@ -541,22 +724,46 @@
     return el('span', { class: 'badge badge--note' }, ['Notiz']);
   }
 
+  /**
+   * Normalize todo items through the shared database helper to keep sidebar behavior aligned.
+   *
+   * @param {Array<object>|undefined|null} items Raw todo items.
+   * @returns {Array<object>} Normalized todo items.
+   */
   function normalizeTodoItems(items) {
     return rbDB.normalizeTodoItems(items);
   }
 
+  /**
+   * Calculate aggregate todo progress metadata.
+   *
+   * @param {Array<object>|undefined|null} items Todo items.
+   * @returns {{ total: number, done: number, open: number, items: Array<object> }} Todo stats.
+   */
   function getTodoStats(items) {
     const todos = normalizeTodoItems(items);
     const done = todos.filter((item) => item.done).length;
     return { total: todos.length, done, open: todos.length - done, items: todos };
   }
 
+  /**
+   * Build the compact todo progress label shown in entry rows.
+   *
+   * @param {object} entry Entry record.
+   * @returns {string} Progress summary.
+   */
   function getTodoSummary(entry) {
     const stats = getTodoStats(entry?.todos);
     if (!stats.total) return '0/0 erledigt';
     return `${stats.done}/${stats.total} erledigt`;
   }
 
+  /**
+   * Resolve the primary display title for an entry independent of its concrete type.
+   *
+   * @param {object|null|undefined} entry Entry record.
+   * @returns {string} Best-effort display title.
+   */
   function getEntryDisplayTitle(entry) {
     if (!entry) return '(ohne Titel)';
     if (entry.type === 'link') return entry.title || entry.url || '(ohne Titel)';
@@ -564,10 +771,26 @@
     return entry.title || entry.excerpt || '(ohne Titel)';
   }
 
+  /**
+   * Resolve and normalize the persisted sort mode for a topic.
+   *
+   * @param {object|null|undefined} topic Topic record.
+   * @returns {string} Normalized sort mode.
+   */
   function getTopicEntrySortMode(topic) {
     return rbDB.normalizeEntrySortMode(topic?.entrySortMode);
   }
 
+  /**
+   * Determine the effective sort mode for the active entry tab.
+   *
+   * Type-based sorts are collapsed inside single-type tabs because the result would
+   * otherwise be redundant or confusing.
+   *
+   * @param {object|null|undefined} topic Topic record.
+   * @param {string} [entryTab='all'] Active tab key.
+   * @returns {string} Effective sort mode.
+   */
   function getEffectiveEntrySortMode(topic, entryTab = 'all') {
     const mode = getTopicEntrySortMode(topic);
     if (entryTab === 'all') return mode;
@@ -576,10 +799,22 @@
     return mode;
   }
 
+  /**
+   * Map entry types to a stable rank used by type-based sorting.
+   *
+   * @param {string} type Entry type.
+   * @returns {number} Sort rank.
+   */
   function getEntryTypeRank(type) {
     return type === 'link' ? 0 : (type === 'quote' ? 1 : (type === 'todo' ? 2 : 3));
   }
 
+  /**
+   * Resolve the localized tab label for a single entry type.
+   *
+   * @param {string} type Entry type.
+   * @returns {string} Tab label.
+   */
   function getEntryTypeTabLabel(type) {
     if (type === 'link') return 'Links';
     if (type === 'quote') return 'Textauszüge';
@@ -587,6 +822,15 @@
     return 'Notizen';
   }
 
+  /**
+   * Build the visible type-tab list for a topic.
+   *
+   * Tabs are hidden completely when the topic only contains one entry type,
+   * because the filtered view would not add meaningful navigation value.
+   *
+   * @param {Array<object>} entries Topic entries.
+   * @returns {Array<{ key: string, label: string }>} Available tabs.
+   */
   function getAvailableTopicEntryTabs(entries) {
     const types = ['link', 'note', 'quote', 'todo'];
     const availableTypes = types.filter((type) => entries.some((entry) => entry.type === type));
@@ -601,6 +845,14 @@
     return tabs;
   }
 
+  /**
+   * Filter topic entries by both search query and active type tab.
+   *
+   * @param {Array<object>} entries Topic entries.
+   * @param {string} query Normalized query.
+   * @param {string} [entryTab='all'] Active tab key.
+   * @returns {Array<object>} Visible entries.
+   */
   function getVisibleTopicEntries(entries, query, entryTab = 'all') {
     return entries.filter((entry) => {
       if (entryTab !== 'all' && entry.type !== entryTab) return false;
@@ -608,6 +860,12 @@
     });
   }
 
+  /**
+   * Resolve the localized label for an entry sort mode.
+   *
+   * @param {string} mode Sort mode key.
+   * @returns {string} Human-readable label.
+   */
   function getEntrySortLabel(mode) {
     if (mode === 'type') return 'Typ';
     if (mode === 'title') return 'Name';
@@ -615,6 +873,14 @@
     return 'Benutzerdefiniert';
   }
 
+  /**
+   * Persist a topic sort mode change, refresh sidebar state, and surface a toast.
+   *
+   * @param {string} topicId Topic identifier.
+   * @param {string} nextMode New sort mode.
+   * @param {{ entryTab?: string }} [options={}] Active tab metadata for toast context.
+   * @returns {Promise<void>}
+   */
   async function updateTopicEntrySortMode(topicId, nextMode, { entryTab = 'all' } = {}) {
     await rbDB.updateTopic(state.db, topicId, { entrySortMode: nextMode });
     await refreshTopics();
@@ -624,6 +890,14 @@
     toast(`Sortierung${tabSuffix}: ${getEntrySortLabel(nextMode)}`);
   }
 
+  /**
+   * Open the sort-mode dropdown for the current topic view.
+   *
+   * @param {object|null|undefined} topic Topic record.
+   * @param {HTMLElement} anchorEl Button used as dropdown anchor.
+   * @param {{ entryTab?: string }} [options={}] Active tab metadata.
+   * @returns {void}
+   */
   function openTopicSortMenu(topic, anchorEl, { entryTab = 'all' } = {}) {
     if (!topic) return;
     const currentMode = getEffectiveEntrySortMode(topic, entryTab);
@@ -656,6 +930,13 @@
     } : {});
   }
 
+  /**
+   * Sort entries for a topic according to the persisted topic sort mode.
+   *
+   * @param {Array<object>} entries Topic entries.
+   * @param {object|null|undefined} topic Topic record.
+   * @returns {Array<object>} Sorted entries.
+   */
   function sortEntriesForTopic(entries, topic) {
     const mode = getTopicEntrySortMode(topic);
     const list = Array.isArray(entries) ? [...entries] : [];
@@ -680,6 +961,12 @@
     return list;
   }
 
+  /**
+   * Collect text fragments used for entry indexing and search matching.
+   *
+   * @param {object} entry Entry record.
+   * @returns {Array<string|undefined>} Searchable text fragments.
+   */
   function collectEntrySearchParts(entry) {
     return [
       entry.title,
@@ -693,6 +980,12 @@
     ];
   }
 
+  /**
+   * Create the interactive todo editor used in create/edit entry dialogs.
+   *
+   * @param {Array<object>} [initialItems=[]] Initial todo items.
+   * @returns {{ root: HTMLElement, getItems: () => Array<object>, focusFirstInput: () => void }} Todo editor API.
+   */
   function createTodoEditor(initialItems = []) {
     let items = normalizeTodoItems(initialItems);
     const list = el('div', { class: 'todo-editor__list' });
@@ -766,28 +1059,59 @@
     };
   }
 
+  /**
+   * Normalize free-form search input for matching.
+   *
+   * @param {string} q Raw query.
+   * @returns {string} Normalized query string.
+   */
   function normalizeQuery(q) {
     return (q ?? '').trim().toLowerCase();
   }
 
+  /**
+   * Escape a dynamic string so it can safely be embedded inside a CSS attribute selector.
+   *
+   * @param {string} value Selector value.
+   * @returns {string} Escaped selector fragment.
+   */
   function escapeSelectorAttr(value) {
     const raw = String(value ?? '');
     if (globalThis.CSS?.escape) return globalThis.CSS.escape(raw);
     return raw.replace(/["\\]/g, '\\$&');
   }
 
+  /**
+   * Check whether an entry matches the active normalized query.
+   *
+   * @param {object} e Entry record.
+   * @param {string} q Normalized query.
+   * @returns {boolean} `true` when the entry matches.
+   */
   function matchesEntry(e, q) {
     if (!q) return true;
     const hay = collectEntrySearchParts(e).join(' ').toLowerCase();
     return hay.includes(q);
   }
 
+  /**
+   * Check whether a topic matches the active normalized query.
+   *
+   * @param {object} t Topic record.
+   * @param {string} q Normalized query.
+   * @returns {boolean} `true` when the topic matches.
+   */
   function matchesTopic(t, q) {
     if (!q) return true;
     const hay = [t.title, t.description].join(' ').toLowerCase();
     return hay.includes(q);
   }
 
+  /**
+   * Invalidate the cached topic-entry search index after topic or entry mutations.
+   *
+   * @returns {void}
+   */
   function markTopicSearchIndexDirty() {
     state.topicEntrySearchIndex.clear();
     state.topicEntrySearchIndexReady = false;
@@ -797,6 +1121,13 @@
     state.globalSearchPromise = null;
   }
 
+  /**
+   * Build a ranked search-match descriptor for a single entry.
+   *
+   * @param {object} entry Entry record.
+   * @param {string} q Normalized query.
+   * @returns {{ matched: boolean, key?: string, label?: string, value?: string }} Match descriptor.
+   */
   function getEntryMatchInfo(entry, q) {
     if (!q) return null;
     const checks = [
@@ -826,6 +1157,12 @@
     return null;
   }
 
+  /**
+   * Compute and cache global search results spanning topics and entries.
+   *
+   * @param {string} q Normalized query.
+   * @returns {Promise<void>}
+   */
   async function ensureGlobalSearchResults(q) {
     if (!q) {
       state.globalSearchQuery = '';
@@ -875,6 +1212,11 @@
     }
   }
 
+  /**
+   * Build the lazy topic-entry search index used by global search.
+   *
+   * @returns {Promise<void>}
+   */
   async function ensureTopicEntrySearchIndex() {
     if (state.topicEntrySearchIndexReady) return;
     if (state.topicEntrySearchIndexPromise) {
@@ -904,16 +1246,32 @@
     }
   }
 
+  /**
+   * Load persisted sidebar settings into runtime state.
+   *
+   * @returns {Promise<void>}
+   */
   async function loadSettings() {
     const settings = await ext.storage.local.get({ lastTopicId: null, includeArchived: false });
     state.includeArchived = !!settings.includeArchived;
     state.currentTopicId = settings.lastTopicId;
   }
 
+  /**
+   * Persist a partial settings update to local storage.
+   *
+   * @param {object} patch Partial settings object.
+   * @returns {Promise<void>}
+   */
   async function saveSettings(patch) {
     await ext.storage.local.set(patch);
   }
 
+  /**
+   * Reload topic data from IndexedDB and reconcile the current selection.
+   *
+   * @returns {Promise<void>}
+   */
   async function refreshTopics() {
     state.topicsAll = await rbDB.getAllTopics(state.db, { includeArchived: true });
     state.topics = await rbDB.getAllTopics(state.db, { includeArchived: state.includeArchived });
@@ -927,6 +1285,11 @@
     markTopicSearchIndexDirty();
   }
 
+  /**
+   * Reload entries for the active topic and apply the current topic sort mode.
+   *
+   * @returns {Promise<void>}
+   */
   async function refreshEntries() {
     if (!state.currentTopicId) {
       state.entries = [];
@@ -937,6 +1300,11 @@
     state.entries = sortEntriesForTopic(rawEntries, topic);
   }
 
+  /**
+   * Ensure at least one topic exists and migrate legacy Inbox descriptions if needed.
+   *
+   * @returns {Promise<void>}
+   */
   async function ensureDefaultTopic() {
     const legacyInbox = state.topicsAll.find((topic) => (
       topic?.title === 'Inbox' && topic?.description === 'Schnellablage für neue Fundstücke'
@@ -954,6 +1322,11 @@
     await refreshTopics();
   }
 
+  /**
+   * Configure the top bar for the topic overview screen.
+   *
+   * @returns {void}
+   */
   function setHeaderForTopics() {
     ui.navBackBtn.classList.add('hidden');
     ui.topTitle.classList.remove('hidden');
@@ -966,6 +1339,12 @@
     ui.themeToggleBtn?.classList.remove('hidden');
   }
 
+  /**
+   * Configure the top bar for a single topic detail screen.
+   *
+   * @param {object|null|undefined} topic Active topic record.
+   * @returns {void}
+   */
   function setHeaderForTopic(topic) {
     ui.navBackBtn.classList.remove('hidden');
     ui.topTitle.classList.remove('hidden');
@@ -987,6 +1366,11 @@
     }
   }
 
+  /**
+   * Refresh the archive toggle button label and accessibility text.
+   *
+   * @returns {void}
+   */
   function updateArchiveToggleButton() {
     const btn = ui.qaArchiveToggleBtn;
     if (!btn) return;
@@ -997,6 +1381,13 @@
     if (iconNode) iconNode.textContent = state.includeArchived ? '🗂' : '🗃';
   }
 
+  /**
+   * Render an empty-state card.
+   *
+   * @param {string} message Primary message.
+   * @param {string} [hint=''] Optional helper text.
+   * @returns {HTMLElement} Empty-state node.
+   */
   function renderEmpty(message, hint = '') {
     return el('div', { class: 'card' }, [
       el('div', { class: 'item__title' }, [message]),
@@ -1004,6 +1395,11 @@
     ]);
   }
 
+  /**
+   * Render the persistent footer actions shown at the bottom of the sidebar.
+   *
+   * @returns {HTMLElement} Footer node.
+   */
   function renderSidebarFooter() {
     return el('div', { class: 'sidebar-footer' }, [
       el('div', { class: 'sidebar-footer__links' }, [
@@ -1015,6 +1411,11 @@
     ]);
   }
 
+  /**
+   * Open the extension options page using the best available browser API.
+   *
+   * @returns {Promise<void>}
+   */
   async function openOptionsPage() {
     try {
       if (typeof ext.runtime?.openOptionsPage === 'function') {
@@ -1028,6 +1429,11 @@
     }
   }
 
+  /**
+   * Render the topic overview including search results, topic cards, and footer actions.
+   *
+   * @returns {void}
+   */
   function renderTopicsView() {
     state.view = 'topics';
     setHeaderForTopics();
@@ -1224,6 +1630,11 @@
     syncKbdActiveAfterRender();
   }
 
+  /**
+   * Render the active topic detail screen including add actions, tabs, and entry list.
+   *
+   * @returns {void}
+   */
   function renderTopicView() {
     state.view = 'topic';
     const topic = state.topicsAll.find(t => t.id === state.currentTopicId) || state.topics.find(t => t.id === state.currentTopicId);
@@ -1448,6 +1859,11 @@
     });
   }
 
+  /**
+   * Render whichever sidebar view is currently active.
+   *
+   * @returns {Promise<void>}
+   */
   async function render() {
     closeDropdown();
     if (state.view === 'topic') {
@@ -1458,6 +1874,13 @@
     }
   }
 
+  /**
+   * Open a topic detail view and optionally focus or open a specific entry.
+   *
+   * @param {string} topicId Topic identifier.
+   * @param {{ preserveSearch?: boolean, focusEntryId?: string|null, openEntryId?: string|null }} [options={}] Open behavior.
+   * @returns {Promise<void>}
+   */
   async function openTopic(topicId, { preserveSearch = false, focusEntryId = null, openEntryId = null } = {}) {
     if (state.view === 'topics') {
       state.lastTopicsFocusId = topicId;
@@ -1481,6 +1904,11 @@
     renderTopicView();
   }
 
+  /**
+   * Return from topic detail view to the topic overview.
+   *
+   * @returns {void}
+   */
   function backToTopics() {
     state.search = '';
     ui.searchInput.value = '';
@@ -1494,6 +1922,11 @@
     renderTopicsView();
   }
 
+  /**
+   * Open the create-topic flow and persist a new topic after confirmation.
+   *
+   * @returns {Promise<void>}
+   */
   async function createTopicFlow() {
     const titleInput = el('input', { class: 'input', value: '', placeholder: 'z.B. Blogpost: IndexedDB' });
     const descInput = el('textarea', { class: 'textarea', placeholder: 'Optional: kurze Beschreibung' });
@@ -1527,6 +1960,12 @@
     setTimeout(() => titleInput.focus(), 50);
   }
 
+  /**
+   * Open the edit-topic flow for an existing topic.
+   *
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<void>}
+   */
   async function editTopicFlow(topicId) {
     const topic = state.topics.find(t => t.id === topicId);
     if (!topic) return;
@@ -1567,6 +2006,13 @@
     setTimeout(() => titleInput.focus(), 50);
   }
 
+  /**
+   * Archive or restore a topic.
+   *
+   * @param {string} topicId Topic identifier.
+   * @param {boolean} archived Target archive state.
+   * @returns {Promise<void>}
+   */
   async function archiveTopicFlow(topicId, archived) {
     await rbDB.updateTopic(state.db, topicId, { archived: !!archived });
     await refreshTopics();
@@ -1579,6 +2025,12 @@
     }
   }
 
+  /**
+   * Confirm and delete a topic through the undo-enabled delete flow.
+   *
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<void>}
+   */
   async function deleteTopicFlow(topicId) {
     const topic = state.topics.find(t => t.id === topicId);
     const confirmInput = el('input', { type: 'checkbox', id: 'confirmDeleteTopicCheckbox' });
@@ -1615,6 +2067,12 @@
     openModal({ title: 'Löschen', body, footer });
   }
 
+  /**
+   * Move an entry from its current topic into another topic selected by the user.
+   *
+   * @param {string} entryId Entry identifier.
+   * @returns {Promise<void>}
+   */
   async function moveEntryFlow(entryId) {
     const entry = state.entries.find((item) => item.id === entryId);
     if (!entry) return;
@@ -1669,6 +2127,13 @@
     setTimeout(() => select.focus(), 30);
   }
 
+  /**
+   * Open the create-entry flow for a specific entry type.
+   *
+   * @param {string} type Entry type to create.
+   * @param {object} [preset={}] Preset values used to seed the form.
+   * @returns {Promise<void>}
+   */
   async function addEntryFlow(type, preset = {}) {
     const topic = state.topics.find(t => t.id === state.currentTopicId);
     if (!topic) return;
@@ -1777,6 +2242,11 @@
     }, 50);
   }
 
+  /**
+   * Add the currently active page to the current topic through the background convenience API.
+   *
+   * @returns {Promise<void>}
+   */
   async function addCurrentPageFlow() {
     if (!state.currentTopicId) return;
     const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
@@ -1799,6 +2269,12 @@
     toast('Aktuelle Seite hinzugefügt');
   }
 
+  /**
+   * Open the edit dialog for an existing entry.
+   *
+   * @param {object} entry Entry record.
+   * @returns {Promise<void>}
+   */
   async function openEntry(entry) {
     const urlInput = el('input', { class: 'input mono', value: entry.url || '', placeholder: '(keine URL)' });
     const titleInput = el('input', { class: 'input', value: entry.title || '' });
@@ -1896,6 +2372,11 @@
     ui.modal.dataset.popupSaveMode = 'update-entry';
   }
 
+  /**
+   * Show a compact modal that lets the user jump directly to another topic.
+   *
+   * @returns {Promise<void>}
+   */
   async function showSwitchTopicModal() {
     const select = el('select', { class: 'select' });
     const available = state.topics.filter(t => !t.archived);
@@ -1922,6 +2403,13 @@
     openModal({ title: 'Thema wechseln', body, footer });
   }
 
+  /**
+   * Download a JSON object as a local file.
+   *
+   * @param {string} filename Target file name.
+   * @param {object} obj JSON-serializable payload.
+   * @returns {void}
+   */
   function downloadJson(filename, obj) {
     const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1934,18 +2422,33 @@
     setTimeout(() => URL.revokeObjectURL(url), 800);
   }
 
+  /**
+   * Generate a compact timestamp string used in export file names.
+   *
+   * @returns {string} Timestamp in `YYYYMMDD-HHMMSS` format.
+   */
   function ymdhms() {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
 
+  /**
+   * Export the full application dataset and settings as JSON.
+   *
+   * @returns {Promise<void>}
+   */
   async function exportAllFlow() {
     const data = await rbDB.exportAll(state.db);
     downloadJson(`research-board-backup-${ymdhms()}.json`, data);
     toast('Export erstellt');
   }
 
+  /**
+   * Export the currently selected topic and its entries as JSON.
+   *
+   * @returns {Promise<void>}
+   */
   async function exportTopicFlow() {
     const topic = state.topics.find(t => t.id === state.currentTopicId);
     if (!topic) return;
@@ -1954,6 +2457,11 @@
     toast('Thema exportiert');
   }
 
+  /**
+   * Open the import flow and let the user merge or replace local data from a JSON file.
+   *
+   * @returns {Promise<void>}
+   */
   async function importFlow() {
     const fileInput = el('input', { type: 'file', class: 'input', accept: 'application/json,.json' });
     const modeSelect = el('select', { class: 'select' }, [
@@ -2030,6 +2538,12 @@
     openModal({ title: 'Import', body, footer });
   }
 
+  /**
+   * Build a human-readable summary of an import payload.
+   *
+   * @param {object} obj Parsed import payload.
+   * @returns {string} Summary string.
+   */
   function summarizeImport(obj) {
     if (!obj || typeof obj !== 'object') return 'Ungültiges Format.';
     if (obj.schemaVersion !== 1) return 'Hinweis: Unbekannte schemaVersion.';
@@ -2043,6 +2557,14 @@
     return 'Format erkannt, aber Inhalte sind unvollständig.';
   }
 
+  /**
+   * Apply imported data in either replace or merge mode.
+   *
+   * @param {object} obj Parsed import payload.
+   * @param {'replace'|'merge'} mode Import mode.
+   * @param {{ importSettings?: boolean }} [options={}] Settings import behavior.
+   * @returns {Promise<void>}
+   */
   async function importData(obj, mode, { importSettings = true } = {}) {
     if (!obj || typeof obj !== 'object') throw new Error('Invalid');
 
@@ -2124,6 +2646,14 @@
     }
   }
 
+  /**
+   * Insert topics and entries in a single IndexedDB transaction.
+   *
+   * @param {Array<object>} topics Topic records.
+   * @param {Array<object>} entries Entry records.
+   * @param {{ keepIds: boolean }} options Insert behavior.
+   * @returns {Promise<void>}
+   */
   async function bulkInsert(topics, entries, { keepIds }) {
     const tx = state.db.transaction(['topics', 'entries'], 'readwrite');
     const tStore = tx.objectStore('topics');
@@ -2155,6 +2685,12 @@
     await rbDB.touchChangeToken();
   }
 
+  /**
+   * Extract the first usable URL from a `text/uri-list` payload.
+   *
+   * @param {string} text Raw URI list payload.
+   * @returns {string} First usable URL, if any.
+   */
   function parseUriList(text) {
     const lines = (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     for (const l of lines) {
@@ -2164,18 +2700,36 @@
     return '';
   }
 
+  /**
+   * Check whether plain text resembles an HTTP(S) URL.
+   *
+   * @param {string} s Source text.
+   * @returns {boolean} `true` when the text looks like a URL.
+   */
   function looksLikeUrl(s) {
     if (!s) return false;
     const t = s.trim();
     return t.startsWith('http://') || t.startsWith('https://') || t.startsWith('www.');
   }
 
+  /**
+   * Coerce plain `www.` text into an absolute HTTPS URL.
+   *
+   * @param {string} s Source text.
+   * @returns {string} URL-like string.
+   */
   function coerceUrl(s) {
     const t = (s || '').trim();
     if (t.startsWith('www.')) return 'https://' + t;
     return t;
   }
 
+  /**
+   * Parse Firefox's `text/x-moz-url` drag payload into URL and title parts.
+   *
+   * @param {string} text Raw Firefox drag payload.
+   * @returns {{ url: string, title: string }} Parsed payload.
+   */
   function parseMozUrl(text) {
     const lines = (text || '')
       .split(/\r?\n/)
@@ -2187,12 +2741,24 @@
     };
   }
 
+  /**
+   * Check whether a drag payload can be converted into a sidebar entry.
+   *
+   * @param {DataTransfer|null|undefined} dt Drag payload.
+   * @returns {boolean} `true` when the payload contains supported formats.
+   */
   function hasDropEntryPayload(dt) {
     if (!dt) return false;
     const types = dt.types || [];
     return types.includes('text/uri-list') || types.includes('text/x-moz-url') || types.includes('text/plain');
   }
 
+  /**
+   * Convert supported drag payload data into a sidebar entry candidate.
+   *
+   * @param {DataTransfer|null|undefined} dt Drag payload.
+   * @returns {object|null} Entry candidate, or `null` when the payload is unsupported.
+   */
   function buildEntryFromDropData(dt) {
     if (!dt) return null;
 
@@ -2239,6 +2805,13 @@
     return null;
   }
 
+  /**
+   * Persist an entry created from a drag-and-drop payload.
+   *
+   * @param {DragEvent} ev Drop event.
+   * @param {string} [topicId=state.currentTopicId] Target topic identifier.
+   * @returns {Promise<object|null>} Created entry, if the payload was supported.
+   */
   async function addEntryFromDrop(ev, topicId = state.currentTopicId) {
     const entry = buildEntryFromDropData(ev.dataTransfer);
     if (!entry) return null;
@@ -2247,6 +2820,12 @@
     return created;
   }
 
+  /**
+   * Query the background script for a pending capture and, if present, prompt the
+   * user to assign it to an existing or newly created topic.
+   *
+   * @returns {Promise<void>}
+   */
   async function checkPendingCapture() {
     const pending = await ext.runtime.sendMessage({ type: 'getPendingCapture' }).catch(() => null);
     if (!pending) return;
@@ -2334,6 +2913,12 @@
     openModal({ title: 'Capture zuordnen', body, footer });
   }
 
+  /**
+   * Build the visual preview shown before assigning a pending capture to a topic.
+   *
+   * @param {object} pending Pending capture payload.
+   * @returns {HTMLElement} Preview node.
+   */
   function buildCapturePreview(pending) {
     const info = pending.info || {};
     const tab = pending.tab || {};
@@ -2359,6 +2944,11 @@
     ]);
   }
 
+  /**
+   * Show the sidebar help/overview modal.
+   *
+   * @returns {void}
+   */
   function showHelpModal() {
     const body = el('div', {}, [
       el('div', { class: 'label' }, ['Research Board - Kurzüberblick']),
@@ -2392,6 +2982,11 @@
     openModal({ title: 'Hilfe', body, footer });
   }
 
+  /**
+   * Show the destructive reset modal used to wipe all local sidebar data.
+   *
+   * @returns {Promise<void>}
+   */
   async function showDangerResetModal() {
     const confirmInput = el('input', { type: 'checkbox', id: 'confirmResetCheckbox' });
     const confirmLabel = el('label', { class: 'checkbox-label', for: 'confirmResetCheckbox' }, [
@@ -2430,7 +3025,7 @@
     openModal({ title: 'Zurücksetzen', body, footer });
   }
 
-  // UI events
+  // Wire static UI controls once; dynamic list items attach their handlers during render.
   ui.navBackBtn.addEventListener('click', backToTopics);
 
   ui.searchInput.addEventListener('input', () => {
@@ -2588,7 +3183,7 @@
     }
   });
 
-  // Messages
+  // React to background-originated messages that can arrive while the sidebar stays open.
   ext.runtime.onMessage.addListener((msg) => {
     if (!msg || typeof msg !== 'object') return;
 
@@ -2619,6 +3214,12 @@
     checkPendingCapture();
   });
 
+  /**
+   * Bootstrap the sidebar runtime by loading theme, database, settings, topics,
+   * and deferred capture state before the first render.
+   *
+   * @returns {Promise<void>}
+   */
   async function init() {
     let stage = 'db-open';
     try {

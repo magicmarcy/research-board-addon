@@ -1,7 +1,20 @@
 (() => {
+  /**
+   * Options page runtime.
+   *
+   * This file powers the addon's settings page. It is responsible for:
+   * - loading and rendering auto-backup settings and backup metadata
+   * - sending backup-related commands to the background script
+   * - loading, validating, and persisting URL transformation settings
+   * - keeping the options UI status feedback compact and explicit
+   *
+   * The options page intentionally stays thin: persistence and backup execution live
+   * in shared/background modules, while this file focuses on form state and user actions.
+   */
   const MIN_INTERVAL = 5;
   const MAX_INTERVAL = 10080;
 
+  // Cache all static form elements once because the options page does not rerender dynamically.
   const els = {
     settingsForm: document.getElementById('settingsForm'),
     enabledInput: document.getElementById('enabledInput'),
@@ -17,11 +30,24 @@
     status: document.getElementById('status')
   };
 
+  /**
+   * Update the status message area.
+   *
+   * @param {string} message User-visible status text.
+   * @param {boolean} [isError=false] Whether the status should be styled as an error.
+   * @returns {void}
+   */
   function setStatus(message, isError = false) {
     els.status.textContent = message;
     els.status.classList.toggle('status--error', Boolean(isError));
   }
 
+  /**
+   * Format an ISO timestamp for the backup list.
+   *
+   * @param {string} iso ISO timestamp.
+   * @returns {string} Localized date string.
+   */
   function formatDate(iso) {
     if (!iso) return 'unbekannt';
     try {
@@ -31,6 +57,12 @@
     }
   }
 
+  /**
+   * Format a byte count into a compact human-readable label.
+   *
+   * @param {number} bytes Byte count.
+   * @returns {string} Formatted size string.
+   */
   function formatBytes(bytes) {
     const val = Number(bytes) || 0;
     if (val < 1024) return `${val} B`;
@@ -38,18 +70,36 @@
     return `${(val / (1024 * 1024)).toFixed(2)} MB`;
   }
 
+  /**
+   * Clamp and round the backup interval to the supported range.
+   *
+   * @param {string|number} raw Raw interval value.
+   * @returns {number} Sanitized interval in minutes.
+   */
   function sanitizeInterval(raw) {
     const value = Number(raw);
     if (!Number.isFinite(value)) return 60;
     return Math.max(MIN_INTERVAL, Math.min(MAX_INTERVAL, Math.round(value)));
   }
 
+  /**
+   * Apply the auto-backup config to the options form controls.
+   *
+   * @param {{ enabled?: boolean, intervalMinutes?: number }} config Backup config.
+   * @returns {void}
+   */
   function setFormState(config) {
     els.enabledInput.checked = !!config.enabled;
     els.intervalInput.value = String(config.intervalMinutes || 60);
     els.intervalInput.disabled = !config.enabled;
   }
 
+  /**
+   * Apply the URL transformation config to the options form controls.
+   *
+   * @param {object} config URL transformation config.
+   * @returns {void}
+   */
   function setTransformFormState(config) {
     const c = rbUrlTransform.normalizeConfig(config);
     els.transformEnabledInput.checked = !!c.enabled;
@@ -58,6 +108,12 @@
     els.targetUrlTemplateInput.value = c.targetUrlTemplate;
   }
 
+  /**
+   * Convert an internal backup reason into a localized display label.
+   *
+   * @param {string} reason Backup reason key.
+   * @returns {string} Human-readable label.
+   */
   function backupReasonLabel(reason) {
     if (reason === 'interval') return 'Intervall';
     if (reason === 'change') return 'Änderung';
@@ -68,12 +124,23 @@
     return reason || 'Unbekannt';
   }
 
+  /**
+   * Request the current auto-backup state from the background script.
+   *
+   * @returns {Promise<object>} State payload containing config and backup metadata.
+   */
   async function requestState() {
     const response = await ext.runtime.sendMessage({ type: 'autoBackupGetState' });
     if (!response?.ok) throw new Error(response?.error || 'Status konnte nicht geladen werden.');
     return response;
   }
 
+  /**
+   * Render the list of stored backups with restore and delete actions.
+   *
+   * @param {Array<object>} backups Backup metadata list.
+   * @returns {void}
+   */
   function renderBackups(backups) {
     els.backupList.innerHTML = '';
     if (!backups.length) {
@@ -144,6 +211,11 @@
     }
   }
 
+  /**
+   * Load the complete options-page state and push it into the UI.
+   *
+   * @returns {Promise<void>}
+   */
   async function load() {
     const state = await requestState();
     setFormState(state.config || {});
@@ -152,6 +224,7 @@
     setTransformFormState(transformConfig);
   }
 
+  // Wire backup and URL transform forms once; the page itself stays static after load.
   els.enabledInput.addEventListener('change', () => {
     els.intervalInput.disabled = !els.enabledInput.checked;
   });

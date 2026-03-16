@@ -1,7 +1,21 @@
-// Compatibility helper for Firefox/Chrome style extension APIs.
-// Prefer `browser` (Promise-based). Fallback to `chrome` (callback-based) with small wrappers.
 (() => {
+  /**
+   * Shared extension API compatibility bridge.
+   *
+   * This module exposes a single global `ext` object that the rest of the addon can
+   * use without caring whether it runs in a Firefox-style `browser.*` environment
+   * or a Chrome-style `chrome.*` environment.
+   *
+   * Strategy:
+   * - prefer `browser` when available because it is already Promise-based
+   * - fall back to `chrome` and wrap the callback-style APIs used by this addon
+   * - expose only the subset of APIs that the current codebase depends on
+   *
+   * The goal is to keep compatibility concerns isolated here so the application code
+   * can consistently call `ext.*` without scattering browser-specific branching.
+   */
   if (typeof globalThis.browser !== 'undefined') {
+    // Firefox and some Chromium environments already provide the Promise-based API shape we want.
     globalThis.ext = globalThis.browser;
     return;
   }
@@ -9,7 +23,14 @@
     throw new Error('No extension API found (browser/chrome).');
   }
 
-  // Minimal Promise wrapper for the bits we use.
+  /**
+   * Convert a callback-based Chrome extension API method into a Promise-returning function.
+   *
+   * @template T
+   * @param {Function} fn Chrome API function.
+   * @param {object} ctx Invocation context for the function.
+   * @returns {(...args: any[]) => Promise<T>} Promise-returning wrapper.
+   */
   const promisify = (fn, ctx) => (...args) => new Promise((resolve, reject) => {
     try {
       fn.call(ctx, ...args, (result) => {
@@ -22,6 +43,7 @@
     }
   });
 
+  // Build only the API surface currently needed by the addon runtime.
   const chromeApi = globalThis.chrome;
   const ext = {
     runtime: {
@@ -44,6 +66,7 @@
       get: promisify(chromeApi.tabs.get, chromeApi.tabs),
       create: promisify(chromeApi.tabs.create, chromeApi.tabs)
     },
+    // Alarms are optional in some contexts, so keep the adapter conditional.
     alarms: chromeApi.alarms
       ? {
         create: (name, alarmInfo) => chromeApi.alarms.create(name, alarmInfo),
@@ -57,5 +80,6 @@
     action: chromeApi.action || chromeApi.browserAction
   };
 
+  // Expose the normalized compatibility layer for all other scripts.
   globalThis.ext = ext;
 })();

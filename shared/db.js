@@ -7,6 +7,21 @@
 */
 
 (() => {
+  /**
+   * Shared IndexedDB and persistence helper for Research Board.
+   *
+   * This module is the canonical data-access layer for the addon. It encapsulates:
+   * - database opening and schema creation
+   * - CRUD operations for topics, entries, and backups
+   * - ordering helpers for topics and entries
+   * - application-level import/export helpers
+   * - storage-backed change-token signaling used by other extension contexts
+   *
+   * The goal is to keep all persistence rules in one place so sidebar, background,
+   * and options code can stay focused on UI and orchestration rather than IndexedDB
+   * details. Functions in this file are therefore intentionally explicit even when
+   * they are somewhat verbose.
+   */
   const DB_NAME = 'research_board_db';
   const DB_VERSION = 3;
   const MIN_POSITION = 0;
@@ -40,8 +55,19 @@
     }
   };
 
+  /**
+   * Return the current timestamp in ISO format.
+   *
+   * @returns {string} ISO timestamp.
+   */
   const nowIso = () => new Date().toISOString();
 
+  /**
+   * Normalize todo items into the persisted internal representation.
+   *
+   * @param {Array<object>|undefined|null} items Raw todo items.
+   * @returns {Array<{ id: string, text: string, done: boolean }>} Normalized todo items.
+   */
   function normalizeTodoItems(items) {
     if (!Array.isArray(items)) return [];
     return items
@@ -53,14 +79,24 @@
       .filter((item) => item.text);
   }
 
+  /**
+   * Generate a local identifier for topics, entries, and backups.
+   *
+   * @returns {string} Identifier string.
+   */
   const uuid = () => {
     try {
       if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
     } catch (_) {}
-    // Fallback: not cryptographically strong, but fine for local IDs.
+    // Fallback: not cryptographically strong, but sufficient for local-only records.
     return 'id-' + Math.random().toString(16).slice(2) + '-' + Date.now().toString(16);
   };
 
+  /**
+   * Open the IndexedDB database and create stores/indexes during schema upgrades.
+   *
+   * @returns {Promise<IDBDatabase>} Open IndexedDB database connection.
+   */
   function openDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -98,6 +134,15 @@
     });
   }
 
+  /**
+   * Execute work inside a transaction and resolve when the transaction completes.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string[]} stores Object store names.
+   * @param {'readonly'|'readwrite'} mode Transaction mode.
+   * @param {(tx: IDBTransaction) => void} fn Transaction body.
+   * @returns {Promise<void>}
+   */
   function withTx(db, stores, mode, fn) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(stores, mode);
@@ -108,6 +153,13 @@
     });
   }
 
+  /**
+   * Convert an IndexedDB request into a promise.
+   *
+   * @template T
+   * @param {IDBRequest<T>} req IndexedDB request.
+   * @returns {Promise<T>} Request result.
+   */
   function reqToPromise(req) {
     return new Promise((resolve, reject) => {
       req.onsuccess = () => resolve(req.result);
@@ -115,6 +167,11 @@
     });
   }
 
+  /**
+   * Update the storage-backed data change token used by other extension contexts.
+   *
+   * @returns {Promise<{ token: string, changedAt: string }>} New change-state snapshot.
+   */
   async function touchChangeToken() {
     const token = uuid();
     const changedAt = nowIso();
@@ -130,6 +187,11 @@
     return { token, changedAt };
   }
 
+  /**
+   * Read the current data change token from extension storage.
+   *
+   * @returns {Promise<{ token: string, changedAt: string }>} Current change-state snapshot.
+   */
   async function getChangeState() {
     const values = await ext.storage.local.get({
       [CHANGE_STATE_KEYS.token]: '',
@@ -141,6 +203,12 @@
     };
   }
 
+  /**
+   * Detect IndexedDB data errors that can happen with old or inconsistent local data.
+   *
+   * @param {any} error Error object.
+   * @returns {boolean} `true` when the error should trigger a fallback path.
+   */
   function isDataError(error) {
     if (!error) return false;
     if (error.name === 'DataError') return true;
@@ -148,6 +216,13 @@
     return /does not meet requirements|Data provided/i.test(msg);
   }
 
+  /**
+   * Fallback topic loader that uses `getAll()` and client-side sorting when an index lookup fails.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {boolean} includeArchived Whether archived topics should be included.
+   * @returns {Promise<object[]>} Topic list.
+   */
   async function getAllTopicsFallback(db, includeArchived) {
     const tx = db.transaction(['topics'], 'readonly');
     const store = tx.objectStore('topics');
@@ -163,6 +238,13 @@
       });
   }
 
+  /**
+   * Fallback entry loader that uses `getAll()` and client-side sorting when an index lookup fails.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<object[]>} Entry list for the topic.
+   */
   async function getEntriesByTopicFallback(db, topicId) {
     if (!topicId) return [];
     const tx = db.transaction(['entries'], 'readonly');
@@ -178,6 +260,13 @@
       });
   }
 
+  /**
+   * Compute the next topic position within either the active or archived topic bucket.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {boolean} [archived=false] Target archive bucket.
+   * @returns {Promise<number>} Next position value.
+   */
   async function getNextTopicPosition(db, archived = false) {
     try {
       const tx = db.transaction(['topics'], 'readonly');
@@ -210,6 +299,13 @@
     }
   }
 
+  /**
+   * Compute the next entry position inside a topic.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<number>} Next position value.
+   */
   async function getNextEntryPosition(db, topicId) {
     if (!topicId) return 1;
     try {
@@ -240,6 +336,13 @@
     }
   }
 
+  /**
+   * Load all topics in persisted order.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {{ includeArchived?: boolean }} [options={}] Query options.
+   * @returns {Promise<object[]>} Topic list.
+   */
   async function getAllTopics(db, { includeArchived = false } = {}) {
     try {
       const tx = db.transaction(['topics'], 'readonly');
@@ -272,12 +375,25 @@
     }
   }
 
+  /**
+   * Load a single topic by id.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Topic identifier.
+   * @returns {Promise<object|undefined>} Topic record, if found.
+   */
   async function getTopic(db, id) {
     const tx = db.transaction(['topics'], 'readonly');
     const store = tx.objectStore('topics');
     return reqToPromise(store.get(id));
   }
 
+  /**
+   * Normalize the persisted entry sort mode.
+   *
+   * @param {string} mode Raw sort mode.
+   * @returns {'custom'|'type'|'title'|'type_then_title'} Normalized sort mode.
+   */
   function normalizeEntrySortMode(mode) {
     if (mode === 'type') return 'type';
     if (mode === 'title') return 'title';
@@ -285,6 +401,13 @@
     return 'custom';
   }
 
+  /**
+   * Create and persist a new topic.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {{ title?: string, description?: string, color?: string, entrySortMode?: string }} [topicInput={}] Topic input.
+   * @returns {Promise<object>} Created topic record.
+   */
   async function addTopic(db, { title, description = '', color = '', entrySortMode = 'custom' } = {}) {
     const createdAt = nowIso();
     const topic = {
@@ -307,6 +430,14 @@
     return topic;
   }
 
+  /**
+   * Update a topic record.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Topic identifier.
+   * @param {object} patch Partial topic update.
+   * @returns {Promise<object>} Updated topic record.
+   */
   async function updateTopic(db, id, patch) {
     const tx = db.transaction(['topics'], 'readwrite');
     const store = tx.objectStore('topics');
@@ -333,8 +464,15 @@
     return updated;
   }
 
+  /**
+   * Delete a topic and all entries assigned to it.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Topic identifier.
+   * @returns {Promise<void>}
+   */
   async function deleteTopic(db, id) {
-    // Delete topic + its entries in one transaction.
+    // Delete the topic and its dependent entries in one transaction to avoid orphaned rows.
     const tx = db.transaction(['topics', 'entries'], 'readwrite');
     const topics = tx.objectStore('topics');
     const entries = tx.objectStore('entries');
@@ -364,6 +502,13 @@
     await touchChangeToken();
   }
 
+  /**
+   * Load all entries for a topic in persisted order.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<object[]>} Entry list.
+   */
   async function getEntriesByTopic(db, topicId) {
     if (!topicId) return [];
     try {
@@ -393,12 +538,26 @@
     }
   }
 
+  /**
+   * Load all entries across all topics.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @returns {Promise<object[]>} Entry list.
+   */
   async function getAllEntries(db) {
     const tx = db.transaction(['entries'], 'readonly');
     const store = tx.objectStore('entries');
     return reqToPromise(store.getAll());
   }
 
+  /**
+   * Create and persist a new entry inside a topic.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} topicId Target topic identifier.
+   * @param {object} entryInput Raw entry input.
+   * @returns {Promise<object>} Created entry record.
+   */
   async function addEntry(db, topicId, entryInput) {
     const createdAt = nowIso();
     const entry = {
@@ -426,6 +585,14 @@
     return entry;
   }
 
+  /**
+   * Update an existing entry.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Entry identifier.
+   * @param {object} patch Partial entry update.
+   * @returns {Promise<object>} Updated entry record.
+   */
   async function updateEntry(db, id, patch) {
     const tx = db.transaction(['entries'], 'readwrite');
     const store = tx.objectStore('entries');
@@ -451,6 +618,13 @@
     return updated;
   }
 
+  /**
+   * Delete an entry by id.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Entry identifier.
+   * @returns {Promise<void>}
+   */
   async function deleteEntry(db, id) {
     await withTx(db, ['entries'], 'readwrite', (tx) => {
       tx.objectStore('entries').delete(id);
@@ -458,6 +632,14 @@
     await touchChangeToken();
   }
 
+  /**
+   * Move an entry into another topic and append it at the end of the target ordering.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} entryId Entry identifier.
+   * @param {string} targetTopicId Target topic identifier.
+   * @returns {Promise<object>} Updated entry record.
+   */
   async function moveEntryToTopic(db, entryId, targetTopicId) {
     if (!entryId) throw new Error('Entry id required');
     if (!targetTopicId) throw new Error('Target topic id required');
@@ -491,6 +673,7 @@
       });
     } catch (error) {
       if (!isDataError(error)) throw error;
+      // Fall back to scanning all entries if the compound index cannot be used.
       const all = await reqToPromise(entriesStore.getAll());
       const targetEntries = all.filter((item) => item?.topicId === targetTopicId);
       const maxPos = targetEntries.reduce((max, item) => (
@@ -518,6 +701,13 @@
     return updated;
   }
 
+  /**
+   * Persist a custom topic ordering.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string[]} orderedTopicIds Topic ids in desired order.
+   * @returns {Promise<void>}
+   */
   async function reorderTopics(db, orderedTopicIds) {
     const tx = db.transaction(['topics'], 'readwrite');
     const store = tx.objectStore('topics');
@@ -539,6 +729,14 @@
     await touchChangeToken();
   }
 
+  /**
+   * Persist a custom entry ordering for one topic.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} topicId Topic identifier.
+   * @param {string[]} orderedEntryIds Entry ids in desired order.
+   * @returns {Promise<void>}
+   */
   async function reorderEntries(db, topicId, orderedEntryIds) {
     const tx = db.transaction(['entries'], 'readwrite');
     const store = tx.objectStore('entries');
@@ -561,6 +759,12 @@
     await touchChangeToken();
   }
 
+  /**
+   * Remove all topics and entries from the database.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @returns {Promise<void>}
+   */
   async function clearAll(db) {
     const tx = db.transaction(['topics', 'entries'], 'readwrite');
     tx.objectStore('topics').clear();
@@ -573,6 +777,12 @@
     await touchChangeToken();
   }
 
+  /**
+   * Normalize the subset of extension settings that belongs to exported application state.
+   *
+   * @param {object} [raw={}] Raw settings object.
+   * @returns {object} Normalized settings object.
+   */
   function normalizeAppSettings(raw = {}) {
     const input = raw && typeof raw === 'object' ? raw : {};
     const autoBackupConfigRaw = input[APP_SETTINGS_KEYS.autoBackupConfig];
@@ -603,11 +813,23 @@
     };
   }
 
+  /**
+   * Export the application settings stored in `storage.local`.
+   *
+   * @returns {Promise<object>} Normalized settings snapshot.
+   */
   async function exportAppSettings() {
     const values = await ext.storage.local.get(APP_SETTINGS_DEFAULTS);
     return normalizeAppSettings(values);
   }
 
+  /**
+   * Apply imported application settings and optionally override the restored last topic id.
+   *
+   * @param {object} [rawSettings={}] Imported settings.
+   * @param {{ lastTopicId?: string|undefined }} [options={}] Override options.
+   * @returns {Promise<object>} Persisted normalized settings.
+   */
   async function applyImportedSettings(rawSettings = {}, { lastTopicId = undefined } = {}) {
     const settings = normalizeAppSettings(rawSettings);
     if (lastTopicId !== undefined) {
@@ -617,6 +839,12 @@
     return settings;
   }
 
+  /**
+   * Export the complete application dataset.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @returns {Promise<object>} Export payload.
+   */
   async function exportAll(db) {
     const topics = await getAllTopics(db, { includeArchived: true });
     const entries = await (async () => {
@@ -637,6 +865,13 @@
     };
   }
 
+  /**
+   * Export a single topic and its entries.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} topicId Topic identifier.
+   * @returns {Promise<object>} Export payload.
+   */
   async function exportTopic(db, topicId) {
     const topic = await getTopic(db, topicId);
     if (!topic) throw new Error('Topic not found');
@@ -653,6 +888,12 @@
     };
   }
 
+  /**
+   * Load all stored backups ordered from newest to oldest.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @returns {Promise<object[]>} Backup records.
+   */
   async function getAllBackups(db) {
     try {
       const tx = db.transaction(['backups'], 'readonly');
@@ -681,18 +922,39 @@
     }
   }
 
+  /**
+   * Load a single backup by id.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Backup identifier.
+   * @returns {Promise<object|undefined>} Backup record, if found.
+   */
   async function getBackup(db, id) {
     const tx = db.transaction(['backups'], 'readonly');
     const store = tx.objectStore('backups');
     return reqToPromise(store.get(id));
   }
 
+  /**
+   * Insert or replace a single backup.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {object} backupItem Backup record.
+   * @returns {Promise<void>}
+   */
   async function putBackup(db, backupItem) {
     await withTx(db, ['backups'], 'readwrite', (tx) => {
       tx.objectStore('backups').put(backupItem);
     });
   }
 
+  /**
+   * Insert or replace multiple backups in one transaction.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {object[]} backupItems Backup records.
+   * @returns {Promise<void>}
+   */
   async function putBackups(db, backupItems) {
     if (!Array.isArray(backupItems) || backupItems.length === 0) return;
     await withTx(db, ['backups'], 'readwrite', (tx) => {
@@ -703,19 +965,32 @@
     });
   }
 
+  /**
+   * Delete a backup by id.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Backup identifier.
+   * @returns {Promise<void>}
+   */
   async function deleteBackup(db, id) {
     await withTx(db, ['backups'], 'readwrite', (tx) => {
       tx.objectStore('backups').delete(id);
     });
   }
 
+  /**
+   * Remove all backups from the backup store.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @returns {Promise<void>}
+   */
   async function clearBackups(db) {
     await withTx(db, ['backups'], 'readwrite', (tx) => {
       tx.objectStore('backups').clear();
     });
   }
 
-  // Expose
+  // Expose persistence helpers as a shared global for all extension contexts.
   globalThis.rbDB = {
     openDb,
     uuid,
