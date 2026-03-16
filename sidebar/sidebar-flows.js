@@ -1083,13 +1083,19 @@
     const body = el('div', {}, [
       el('div', { class: 'label' }, ['Research Board - Kurzüberblick']),
       el('div', { class: 'subtle', style: 'margin-top:6px;' }, [
-        'Mit der Sidebar sammelst und organisierst du Links, Textauszüge und Notizen in Themen.'
+        'Mit der Sidebar sammelst und organisierst du Links, Textauszüge, Notizen und Todos in Themen.'
       ]),
 
       el('div', { class: 'card', style: 'margin-top:12px; background: color-mix(in oklab, var(--surface) 78%, var(--bg));' }, [
         el('div', { class: 'label' }, ['Themen & Einträge']),
         el('div', { class: 'small', style: 'margin-top:6px;' }, ['Themen anlegen, sortieren, archivieren und löschen.']),
-        el('div', { class: 'small', style: 'margin-top:4px;' }, ['Einträge je Thema als Link, Text oder Notiz speichern.'])
+        el('div', { class: 'small', style: 'margin-top:4px;' }, ['Einträge je Thema als Link, Textauszug, Notiz oder Todo speichern.'])
+      ]),
+
+      el('div', { class: 'card', style: 'margin-top:10px; background: color-mix(in oklab, var(--surface) 78%, var(--bg));' }, [
+        el('div', { class: 'label' }, ['Ansicht & Sortierung']),
+        el('div', { class: 'small', style: 'margin-top:6px;' }, ['Innerhalb eines Themas kannst du Einträge sortieren und bei mehreren Typen über Tabs filtern.']),
+        el('div', { class: 'small', style: 'margin-top:4px;' }, ['Der Tab „Alle“ zeigt immer alles, weitere Tabs erscheinen nur bei vorhandenen Einträgen.'])
       ]),
 
       el('div', { class: 'card', style: 'margin-top:10px; background: color-mix(in oklab, var(--surface) 78%, var(--bg));' }, [
@@ -1101,7 +1107,7 @@
       el('div', { class: 'card', style: 'margin-top:10px; background: color-mix(in oklab, var(--surface) 78%, var(--bg));' }, [
         el('div', { class: 'label' }, ['Import, Export & Sicherheit']),
         el('div', { class: 'small', style: 'margin-top:6px;' }, ['Komplette Daten oder einzelne Themen exportieren/importieren.']),
-        el('div', { class: 'small', style: 'margin-top:4px;' }, ['Löschaktionen bieten Rückgängig-Optionen, \"Alle Daten löschen\" entfernt alles dauerhaft.'])
+        el('div', { class: 'small', style: 'margin-top:4px;' }, ['Auto-Backups, Rückgängig-Optionen und Sicherheits-Backups vor Wiederherstellungen helfen beim Schutz deiner Daten.'])
       ])
     ]);
 
