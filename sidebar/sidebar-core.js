@@ -14,24 +14,6 @@
 */
 
   /**
-   * Research Board sidebar runtime.
-   *
-   * This file owns the interactive sidebar application shown inside Firefox.
-   * It coordinates:
-   * - sidebar-level UI state such as the active view, selected topic, search input,
-   *   keyboard navigation, drag state, and modal/dropdown visibility
-   * - IndexedDB-backed topic and entry loading through `rbDB`
-   * - rendering for the topic overview and topic detail screens
-   * - entry creation, editing, moving, archiving, importing, exporting, and undo flows
-   * - browser-extension messaging for pending captures, background-triggered refreshes,
-   *   and convenience actions such as opening URLs in new tabs
-   *
-   * The sidebar intentionally acts as the main application shell for user-facing
-   * workflows, while the background script owns browser integration and lifecycle
-   * orchestration. The goal in this file is to keep state transitions explicit and
-   * render updates predictable even though many features share the same surface.
-   */
-  /**
    * Resolve a single DOM node from the current sidebar document.
    *
    * @param {string} sel CSS selector.
