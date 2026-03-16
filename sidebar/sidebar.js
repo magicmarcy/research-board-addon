@@ -35,6 +35,7 @@
     entries: [],
     view: 'topics', // topics | topic
     currentTopicId: null,
+    currentTopicEntryTab: 'all',
     lastTopicsFocusId: null,
     pendingFocusEntryId: null,
     pendingOpenEntryId: null,
@@ -567,8 +568,44 @@
     return rbDB.normalizeEntrySortMode(topic?.entrySortMode);
   }
 
+  function getEffectiveEntrySortMode(topic, entryTab = 'all') {
+    const mode = getTopicEntrySortMode(topic);
+    if (entryTab === 'all') return mode;
+    if (mode === 'type') return 'custom';
+    if (mode === 'type_then_title') return 'title';
+    return mode;
+  }
+
   function getEntryTypeRank(type) {
     return type === 'link' ? 0 : (type === 'quote' ? 1 : (type === 'todo' ? 2 : 3));
+  }
+
+  function getEntryTypeTabLabel(type) {
+    if (type === 'link') return 'Links';
+    if (type === 'quote') return 'Textauszüge';
+    if (type === 'todo') return 'Todos';
+    return 'Notizen';
+  }
+
+  function getAvailableTopicEntryTabs(entries) {
+    const types = ['link', 'note', 'quote', 'todo'];
+    const availableTypes = types.filter((type) => entries.some((entry) => entry.type === type));
+    if (availableTypes.length <= 1) {
+      return [{ key: 'all', label: 'Alle' }];
+    }
+
+    const tabs = [{ key: 'all', label: 'Alle' }];
+    for (const type of availableTypes) {
+      tabs.push({ key: type, label: getEntryTypeTabLabel(type) });
+    }
+    return tabs;
+  }
+
+  function getVisibleTopicEntries(entries, query, entryTab = 'all') {
+    return entries.filter((entry) => {
+      if (entryTab !== 'all' && entry.type !== entryTab) return false;
+      return matchesEntry(entry, query);
+    });
   }
 
   function getEntrySortLabel(mode) {
@@ -578,36 +615,42 @@
     return 'Benutzerdefiniert';
   }
 
-  async function updateTopicEntrySortMode(topicId, nextMode) {
+  async function updateTopicEntrySortMode(topicId, nextMode, { entryTab = 'all' } = {}) {
     await rbDB.updateTopic(state.db, topicId, { entrySortMode: nextMode });
     await refreshTopics();
     await refreshEntries();
     render();
-    toast(`Sortierung: ${getEntrySortLabel(nextMode)}`);
+    const tabSuffix = entryTab === 'all' ? '' : ` (${getEntryTypeTabLabel(entryTab)})`;
+    toast(`Sortierung${tabSuffix}: ${getEntrySortLabel(nextMode)}`);
   }
 
-  function openTopicSortMenu(topic, anchorEl) {
+  function openTopicSortMenu(topic, anchorEl, { entryTab = 'all' } = {}) {
     if (!topic) return;
-    const currentMode = getTopicEntrySortMode(topic);
+    const currentMode = getEffectiveEntrySortMode(topic, entryTab);
     const rect = anchorEl?.getBoundingClientRect?.();
-    openDropdown([
+    const items = [
       {
         label: currentMode === 'custom' ? 'Benutzerdefiniert ✓' : 'Benutzerdefiniert',
-        onClick: async () => updateTopicEntrySortMode(topic.id, 'custom')
-      },
-      {
-        label: currentMode === 'type' ? 'Typ ✓' : 'Typ',
-        onClick: async () => updateTopicEntrySortMode(topic.id, 'type')
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'custom', { entryTab })
       },
       {
         label: currentMode === 'title' ? 'Name ✓' : 'Name',
-        onClick: async () => updateTopicEntrySortMode(topic.id, 'title')
-      },
-      {
-        label: currentMode === 'type_then_title' ? 'Typ, dann Name ✓' : 'Typ, dann Name',
-        onClick: async () => updateTopicEntrySortMode(topic.id, 'type_then_title')
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'title', { entryTab })
       }
-    ], rect ? {
+    ];
+
+    if (entryTab === 'all') {
+      items.splice(1, 0, {
+        label: currentMode === 'type' ? 'Typ ✓' : 'Typ',
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'type', { entryTab })
+      });
+      items.push({
+        label: currentMode === 'type_then_title' ? 'Typ, dann Name ✓' : 'Typ, dann Name',
+        onClick: async () => updateTopicEntrySortMode(topic.id, 'type_then_title', { entryTab })
+      });
+    }
+
+    openDropdown(items, rect ? {
       anchorX: rect.right - 220,
       anchorY: rect.bottom + 6
     } : {});
@@ -895,8 +938,16 @@
   }
 
   async function ensureDefaultTopic() {
+    const legacyInbox = state.topicsAll.find((topic) => (
+      topic?.title === 'Inbox' && topic?.description === 'Schnellablage für neue Fundstücke'
+    ));
+    if (legacyInbox) {
+      await rbDB.updateTopic(state.db, legacyInbox.id, { description: '' });
+      await refreshTopics();
+    }
+
     if (state.topics.length > 0) return;
-    const t = await rbDB.addTopic(state.db, { title: 'Inbox', description: 'Schnellablage für neue Fundstücke' });
+    const t = await rbDB.addTopic(state.db, { title: 'Inbox', description: '' });
     state.currentTopicId = t.id;
     await saveSettings({ lastTopicId: t.id });
     await ext.runtime.sendMessage({ type: 'topicsChanged' }).catch(() => {});
@@ -1176,12 +1227,16 @@
   function renderTopicView() {
     state.view = 'topic';
     const topic = state.topicsAll.find(t => t.id === state.currentTopicId) || state.topics.find(t => t.id === state.currentTopicId);
-    const topicSortMode = getTopicEntrySortMode(topic);
+    const tabs = getAvailableTopicEntryTabs(state.entries);
+    if (!tabs.some((tab) => tab.key === state.currentTopicEntryTab)) {
+      state.currentTopicEntryTab = 'all';
+    }
+    const topicSortMode = getEffectiveEntrySortMode(topic, state.currentTopicEntryTab);
     const isCustomOrder = topicSortMode === 'custom';
     setHeaderForTopic(topic);
 
     const q = normalizeQuery(state.search);
-    const entries = state.entries.filter(e => matchesEntry(e, q));
+    const entries = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab);
     const sortBtn = el('button', {
       class: 'btn btn--icon',
       type: 'button',
@@ -1189,9 +1244,25 @@
       'aria-label': `Sortierung: ${getEntrySortLabel(topicSortMode)}`,
       onclick: (ev) => {
         ev.stopPropagation();
-        openTopicSortMenu(topic, ev.currentTarget);
+        openTopicSortMenu(topic, ev.currentTarget, { entryTab: state.currentTopicEntryTab });
       }
     }, ['⇅']);
+
+    const tabsBar = tabs.length > 1
+      ? el('div', { class: 'topic-tabs', role: 'tablist', 'aria-label': 'Eintragstypen' }, tabs.map((tab) => (
+        el('button', {
+          class: `topic-tab${tab.key === 'all' ? '' : ` topic-tab--${tab.key}`}${tab.key === state.currentTopicEntryTab ? ' topic-tab--active' : ''}`,
+          type: 'button',
+          role: 'tab',
+          'aria-selected': tab.key === state.currentTopicEntryTab ? 'true' : 'false',
+          onclick: () => {
+            if (state.currentTopicEntryTab === tab.key) return;
+            state.currentTopicEntryTab = tab.key;
+            renderTopicView();
+          }
+        }, [tab.label])
+      )))
+      : null;
 
     const headerCard = el('div', { class: 'card section topic-detail-header' }, [
       topic?.description ? el('div', { class: 'small', style: 'margin-top:6px;' }, [topic.description]) : null,
@@ -1205,10 +1276,13 @@
       el('div', { class: 'dropzone', id: 'dropzone', style: 'margin-top:10px;' }, ['Drop here'])
     ]);
 
-    const list = el('div', { class: 'list', id: 'entriesList' });
+    const list = el('div', { class: `list${tabsBar ? ' list--tabbed' : ''}`, id: 'entriesList' });
 
     if (entries.length === 0) {
-      list.appendChild(el('div', { class: 'subtle' }, ['Nutze „Link“, „Aktuelle Seite“, „Textauszug“ oder „Notiz“, um den ersten Eintrag anzulegen.']));
+      const emptyText = state.entries.length === 0
+        ? 'Nutze „Link“, „Aktuelle Seite“, „Textauszug“ oder „Notiz“, um den ersten Eintrag anzulegen.'
+        : 'Keine Einträge für den gewählten Tab gefunden.';
+      list.appendChild(el('div', { class: 'subtle' }, [emptyText]));
     } else {
       for (const e of entries) {
         const isLink = e.type === 'link';
@@ -1307,7 +1381,7 @@
           const targetId = e.id;
           if (!draggedId || draggedId === targetId) return;
 
-          const visible = state.entries.filter(x => matchesEntry(x, q));
+          const visible = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab);
           const ids = visible.map(x => x.id);
           const from = ids.indexOf(draggedId);
           const to = ids.indexOf(targetId);
@@ -1331,6 +1405,7 @@
 
     ui.main.innerHTML = '';
     ui.main.appendChild(headerCard);
+    if (tabsBar) ui.main.appendChild(tabsBar);
     ui.main.appendChild(list);
     ui.main.appendChild(renderSidebarFooter());
     syncKbdActiveAfterRender();
@@ -1396,6 +1471,13 @@
     state.pendingFocusEntryId = focusEntryId || null;
     state.pendingOpenEntryId = openEntryId || null;
     await refreshEntries();
+    if (focusEntryId || openEntryId) {
+      const targetEntryId = focusEntryId || openEntryId;
+      const targetEntry = state.entries.find((entry) => entry.id === targetEntryId) || null;
+      state.currentTopicEntryTab = targetEntry?.type || 'all';
+    } else {
+      state.currentTopicEntryTab = 'all';
+    }
     renderTopicView();
   }
 

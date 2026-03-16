@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.7.0**
+Aktuelle Version: **1.8.0**
 
 ## Features
 
@@ -18,6 +18,10 @@ Aktuelle Version: **1.7.0**
 - Sortierung pro Thema:
   - Benutzerdefiniert per Drag and Drop
   - Nach Typ, Name oder Typ und Name
+- Typ-Tabs innerhalb eines Themas:
+  - `Alle` zeigt weiterhin die komplette Themenliste mit bestehender Sortierlogik
+  - Zusätzliche Tabs wie `Links`, `Notizen`, `Textauszüge` oder `Todos` erscheinen nur bei vorhandenen Einträgen
+  - Sortierung und manuelles Umordnen funktionieren auch innerhalb der typgefilterten Ansicht
 - Capture per Kontextmenü: Seite, Link oder Auswahl direkt in ein Thema speichern
 - Konfigurierbare URL-Umschreibung in den Einstellungen:
   - Eine oder mehrere Quell-URL-Prefixe definieren
@@ -100,10 +104,11 @@ Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
    - Rechtsklick auf Seite/Link/Auswahl -> `Zum Research Board hinzufügen`
    - Oder in der Sidebar Eintrag manuell erstellen
    - Oder per Drag-and-Drop in die Dropzone ziehen
-4. Daten bei Bedarf exportieren/importieren (JSON).
-5. Auto-Backups in den Add-on-Einstellungen konfigurieren.
+4. Innerhalb eines Themas bei Bedarf über Tabs nach Eintragstyp filtern und dort weiter sortieren.
+5. Daten bei Bedarf exportieren/importieren (JSON).
+6. Auto-Backups in den Add-on-Einstellungen konfigurieren.
    - Backups werden zusätzlich bei Datenänderungen zuverlässig (debounced) ausgelöst.
-6. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL; mehrere Quellen per Zeilenumbruch, `;`, `,` oder `|`).
+7. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL; mehrere Quellen per Zeilenumbruch, `;`, `,` oder `|`).
 
 ## Berechtigungen
 
