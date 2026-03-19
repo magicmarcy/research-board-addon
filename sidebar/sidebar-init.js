@@ -119,7 +119,77 @@
   ui.modalOverlay.addEventListener('click', (ev) => {
     if (ev.target === ui.modalOverlay) closeModal();
   });
+
+  /**
+   * Open the item context menu via keyboard (Context Menu key / Shift+F10).
+   *
+   * Priority:
+   * 1) currently keyboard-active list item
+   * 2) currently focused element inside a list item
+   * 3) first navigable list item
+   *
+   * @returns {boolean} `true` when a context menu target was found and triggered.
+   */
+  let suppressNativeContextMenuUntil = 0;
+
+  function openKeyboardContextMenu() {
+    let node = document.querySelector('.item--kbd-active');
+    if (!node) {
+      node = document.activeElement?.closest?.('.item') || null;
+    }
+    if (!node) {
+      const nodes = getNavigableNodes();
+      if (nodes.length) {
+        setKbdActiveIndex(0);
+        node = nodes[0];
+      }
+    }
+    if (!node) return false;
+    suppressNativeContextMenuUntil = Date.now() + 500;
+    const rect = node.getBoundingClientRect();
+    const x = Math.round(rect.left + Math.max(8, Math.min(24, rect.width - 8)));
+    const y = Math.round(rect.top + Math.max(8, Math.min(20, rect.height - 8)));
+    node.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 2,
+      buttons: 2,
+      clientX: x,
+      clientY: y
+    }));
+    setTimeout(() => {
+      const firstItem = ui.dropdown.querySelector('.dropitem');
+      if (firstItem && typeof firstItem.focus === 'function') {
+        for (const item of ui.dropdown.querySelectorAll('.dropitem')) {
+          item.setAttribute('tabindex', item === firstItem ? '0' : '-1');
+        }
+        firstItem.focus();
+      }
+    }, 0);
+    return true;
+  }
+
+  // Prevent the browser's native menu right after keyboard-triggered context-menu requests.
+  // Our synthetic contextmenu event (isTrusted=false) still reaches the item handlers.
+  document.addEventListener('contextmenu', (ev) => {
+    if (Date.now() > suppressNativeContextMenuUntil) return;
+    if (!ev.isTrusted) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+  }, true);
+
   document.addEventListener('keydown', (ev) => {
+    const isContextMenuKey = ev.key === 'ContextMenu' || ev.code === 'ContextMenu';
+    const isShiftF10 = ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key === 'F10';
+    if (isContextMenuKey || isShiftF10) {
+      if (!ui.modalOverlay.classList.contains('hidden')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      openKeyboardContextMenu();
+      return;
+    }
+
     if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === 'k') {
       if (!ui.modalOverlay.classList.contains('hidden')) return;
       ev.preventDefault();
@@ -198,6 +268,15 @@
       ev.preventDefault();
       activateKbdSelection();
     }
+  });
+
+  document.addEventListener('keyup', (ev) => {
+    const isContextMenuKey = ev.key === 'ContextMenu' || ev.code === 'ContextMenu';
+    const isShiftF10 = ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key === 'F10';
+    if (!(isContextMenuKey || isShiftF10)) return;
+    if (!ui.modalOverlay.classList.contains('hidden')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
   });
 
   // React to background-originated messages that can arrive while the sidebar stays open.

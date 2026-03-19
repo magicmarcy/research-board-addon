@@ -304,8 +304,18 @@
    */
   function openDropdown(items, { anchorX = null, anchorY = null } = {}) {
     ui.dropdown.innerHTML = '';
+    const nodes = [];
+    const focusAt = (index) => {
+      if (!nodes.length) return;
+      const next = ((index % nodes.length) + nodes.length) % nodes.length;
+      for (let i = 0; i < nodes.length; i++) {
+        nodes[i].setAttribute('tabindex', i === next ? '0' : '-1');
+      }
+      nodes[next].focus();
+    };
+
     for (const it of items) {
-      const node = el('div', { class: `dropitem${it.danger ? ' dropitem--danger' : ''}`, role: 'menuitem' }, [
+      const node = el('div', { class: `dropitem${it.danger ? ' dropitem--danger' : ''}`, role: 'menuitem', tabindex: '-1' }, [
         el('div', {}, [it.label]),
         it.hint ? el('div', { class: 'dropitem__hint' }, [it.hint]) : null
       ]);
@@ -313,6 +323,40 @@
         closeDropdown();
         await it.onClick?.();
       });
+      node.addEventListener('keydown', async (ev) => {
+        const current = nodes.indexOf(node);
+        if (ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          focusAt(current + 1);
+          return;
+        }
+        if (ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          focusAt(current - 1);
+          return;
+        }
+        if (ev.key === 'Home') {
+          ev.preventDefault();
+          focusAt(0);
+          return;
+        }
+        if (ev.key === 'End') {
+          ev.preventDefault();
+          focusAt(nodes.length - 1);
+          return;
+        }
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          closeDropdown();
+          return;
+        }
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          closeDropdown();
+          await it.onClick?.();
+        }
+      });
+      nodes.push(node);
       ui.dropdown.appendChild(node);
     }
     ui.dropdown.classList.remove('hidden');
