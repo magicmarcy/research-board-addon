@@ -120,6 +120,32 @@
     if (ev.target === ui.modalOverlay) closeModal();
   });
   document.addEventListener('keydown', (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === 'k') {
+      if (!ui.modalOverlay.classList.contains('hidden')) return;
+      ev.preventDefault();
+      ui.searchInput.focus();
+      ui.searchInput.select();
+      return;
+    }
+
+    if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+      if (!ui.modalOverlay.classList.contains('hidden')) return;
+      const active = document.activeElement;
+      if (active && document.contains(active) && isEditableTarget(active)) return;
+      if (state.view !== 'topic') return;
+      const tabs = Array.from(document.querySelectorAll('.topic-tabs .topic-tab'));
+      if (tabs.length <= 1) return;
+      const current = tabs.findIndex((node) => node.getAttribute('aria-selected') === 'true');
+      if (current < 0) return;
+      ev.preventDefault();
+      const delta = ev.key === 'ArrowRight' ? 1 : -1;
+      const next = (current + delta + tabs.length) % tabs.length;
+      const nextTab = tabs[next];
+      nextTab?.click();
+      nextTab?.focus();
+      return;
+    }
+
     if (ev.key === 'Escape') {
       if (!ui.dropdown.classList.contains('hidden')) {
         closeDropdown();
@@ -127,6 +153,13 @@
       }
       if (!ui.modalOverlay.classList.contains('hidden')) {
         closeModal();
+        setTimeout(() => {
+          if (state.view !== 'topic') return;
+          const activeTab = document.querySelector('.topic-tabs .topic-tab[aria-selected="true"]');
+          if (activeTab && typeof activeTab.focus === 'function') {
+            activeTab.focus();
+          }
+        }, 0);
         return;
       }
       if (state.view === 'topic') {

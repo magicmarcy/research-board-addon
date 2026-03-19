@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.9.2**
+Aktuelle Version: **1.9.3**
 
 ## Features
 
@@ -24,6 +24,9 @@ Aktuelle Version: **1.9.2**
   - `Alle` zeigt weiterhin die komplette Themenliste mit bestehender Sortierlogik
   - Zusätzliche Tabs wie `Links`, `Notizen`, `Textauszüge` oder `Todos` erscheinen nur bei vorhandenen Einträgen
   - Sortierung und manuelles Umordnen funktionieren auch innerhalb der typgefilterten Ansicht
+- Tastatur-Navigation:
+  - `Ctrl+K` fokussiert die Suche direkt
+  - In Themenansicht wechseln `←` und `→` zwischen den Typ-Tabs
 - Capture per Kontextmenü: Seite, Link oder Auswahl direkt in ein Thema speichern
 - Konfigurierbare URL-Umschreibung in den Einstellungen:
   - Eine oder mehrere Quell-URL-Prefixe definieren

@@ -269,6 +269,7 @@
           class: `topic-tab${tab.key === 'all' ? '' : ` topic-tab--${tab.key}`}${tab.key === state.currentTopicEntryTab ? ' topic-tab--active' : ''}`,
           type: 'button',
           role: 'tab',
+          tabindex: tab.key === state.currentTopicEntryTab ? '0' : '-1',
           'aria-selected': tab.key === state.currentTopicEntryTab ? 'true' : 'false',
           onclick: () => {
             if (state.currentTopicEntryTab === tab.key) return;
