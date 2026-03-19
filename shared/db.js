@@ -1,8 +1,8 @@
 /*
   Research Board DB (IndexedDB)
   Stores:
-    - topics: { id, title, description?, color?, createdAt, updatedAt, archived, position }
-    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, todos?, createdAt, updatedAt, position }
+    - topics: { id, title, description?, color?, createdAt, updatedAt, archived, highlighted?, pinned?, position }
+    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, todos?, highlighted?, pinned?, createdAt, updatedAt, position }
     - backups: { id, createdAt, reason, signature, snapshot }
 */
 
@@ -405,10 +405,10 @@
    * Create and persist a new topic.
    *
    * @param {IDBDatabase} db Open database connection.
-   * @param {{ title?: string, description?: string, color?: string, entrySortMode?: string }} [topicInput={}] Topic input.
+   * @param {{ title?: string, description?: string, color?: string, entrySortMode?: string, highlighted?: boolean, pinned?: boolean }} [topicInput={}] Topic input.
    * @returns {Promise<object>} Created topic record.
    */
-  async function addTopic(db, { title, description = '', color = '', entrySortMode = 'custom' } = {}) {
+  async function addTopic(db, { title, description = '', color = '', entrySortMode = 'custom', highlighted = false, pinned = false } = {}) {
     const createdAt = nowIso();
     const topic = {
       id: uuid(),
@@ -417,6 +417,8 @@
       color: color ?? '',
       entrySortMode: normalizeEntrySortMode(entrySortMode),
       archived: false,
+      highlighted: !!highlighted,
+      pinned: !!pinned,
       createdAt,
       updatedAt: createdAt,
       position: await getNextTopicPosition(db, false)
@@ -450,6 +452,12 @@
       entrySortMode: Object.prototype.hasOwnProperty.call(patch || {}, 'entrySortMode')
         ? normalizeEntrySortMode(patch.entrySortMode)
         : normalizeEntrySortMode(cur.entrySortMode),
+      highlighted: Object.prototype.hasOwnProperty.call(patch || {}, 'highlighted')
+        ? !!patch.highlighted
+        : !!cur.highlighted,
+      pinned: Object.prototype.hasOwnProperty.call(patch || {}, 'pinned')
+        ? !!patch.pinned
+        : !!cur.pinned,
       updatedAt: nowIso()
     };
 
@@ -572,6 +580,8 @@
       excerpt: entryInput.excerpt ?? '',
       note: entryInput.note ?? '',
       todos: normalizeTodoItems(entryInput.todos),
+      highlighted: !!entryInput.highlighted,
+      pinned: !!entryInput.pinned,
       createdAt,
       updatedAt: createdAt,
       position: typeof entryInput.position === 'number' ? entryInput.position : await getNextEntryPosition(db, topicId)
@@ -603,6 +613,12 @@
       ...cur,
       ...patch,
       todos: Object.prototype.hasOwnProperty.call(patch || {}, 'todos') ? normalizeTodoItems(patch.todos) : normalizeTodoItems(cur.todos),
+      highlighted: Object.prototype.hasOwnProperty.call(patch || {}, 'highlighted')
+        ? !!patch.highlighted
+        : !!cur.highlighted,
+      pinned: Object.prototype.hasOwnProperty.call(patch || {}, 'pinned')
+        ? !!patch.pinned
+        : !!cur.pinned,
       updatedAt: nowIso()
     };
 

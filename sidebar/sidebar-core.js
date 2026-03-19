@@ -581,8 +581,6 @@
     let selector = '#topicsList .item';
     if (state.view === 'topic') {
       selector = '#entriesList .item';
-    } else if (normalizeQuery(state.search)) {
-      selector = '#searchResultsList .item';
     }
     return Array.from(document.querySelectorAll(selector));
   }
@@ -857,6 +855,23 @@
   }
 
   /**
+   * Return a new list with pinned items first while preserving relative order within both groups.
+   *
+   * @param {Array<object>} items Source list.
+   * @returns {Array<object>} Reordered list with pinned items first.
+   */
+  function prioritizePinned(items) {
+    const list = Array.isArray(items) ? items : [];
+    const pinned = [];
+    const rest = [];
+    for (const item of list) {
+      if (item?.pinned) pinned.push(item);
+      else rest.push(item);
+    }
+    return pinned.concat(rest);
+  }
+
+  /**
    * Resolve the localized label for an entry sort mode.
    *
    * @param {string} mode Sort mode key.
@@ -936,7 +951,9 @@
   function sortEntriesForTopic(entries, topic) {
     const mode = getTopicEntrySortMode(topic);
     const list = Array.isArray(entries) ? [...entries] : [];
-    if (mode === 'custom') return list;
+    const pinned = list.filter((item) => !!item?.pinned);
+    const sortable = list.filter((item) => !item?.pinned);
+    if (mode === 'custom') return pinned.concat(sortable);
 
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     const byDisplayName = (a, b) => {
@@ -947,14 +964,14 @@
       return String(a.id || '').localeCompare(String(b.id || ''));
     };
 
-    list.sort((a, b) => {
+    sortable.sort((a, b) => {
       if (mode === 'title') return byDisplayName(a, b);
       const typeCmp = getEntryTypeRank(a.type) - getEntryTypeRank(b.type);
       if (typeCmp !== 0) return typeCmp;
       if (mode === 'type_then_title') return byDisplayName(a, b);
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
-    return list;
+    return pinned.concat(sortable);
   }
 
   /**

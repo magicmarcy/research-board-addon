@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.8.3**
+Aktuelle Version: **1.9.0**
 
 ## Features
 
@@ -12,6 +12,8 @@ Aktuelle Version: **1.8.3**
 - Rechtsklick-Menüs in der Sidebar für Themen und Einträge:
   - Einträge bearbeiten, verschieben oder löschen
   - Themen bearbeiten, archivieren/wiederherstellen oder löschen
+  - Themen und Einträge hervorheben bzw. Hervorhebung entfernen
+  - Themen und Einträge fixieren/lösen
 - Todo-Listen als eigener Eintragstyp:
   - Punkte hinzufügen, löschen und als erledigt markieren
   - Direkt im Eintragsdialog pflegbar
@@ -34,8 +36,16 @@ Aktuelle Version: **1.8.3**
   - `Ctrl+S` im Popup speichert ohne das Popup zu schließen
 - Drag-and-Drop-Unterstützung für Inhalte und Sortierung
 - Globale Suche in Themen und Einträgen:
+  - Kombinierte Trefferliste für passende Themen und Einträge
   - Trefferliste mit Treffer-Kontext (z. B. Titel, Notiz, URL)
   - Klick auf Treffer öffnet direkt den passenden Eintrag im Thema
+- Dauerhafte Hervorhebung für Themen und Einträge:
+  - Über Rechtsklick ein-/ausschaltbar
+  - Eigenständige, dezente Markierung ohne Layout-Änderungen
+- Fixieren von Themen und Einträgen:
+  - Fixierte Elemente stehen immer oben
+  - Fixierte Elemente sind von Sortierung ausgenommen
+  - Fixierte Elemente können nicht per Drag-and-Drop verschoben werden
 - Eintragsdetails zeigen `Erstellt` und `Aktualisiert`
 - Import/Export als JSON:
   - Gesamte Daten exportieren/importieren, inklusive Einstellungen

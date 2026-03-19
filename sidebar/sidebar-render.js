@@ -14,56 +14,14 @@
     setHeaderForTopics();
 
     const q = normalizeQuery(state.search);
-    if (q) {
-      if (state.globalSearchQuery !== q || state.globalSearchPromise) {
-        ensureGlobalSearchResults(q)
-          .then(() => {
-            if (state.view !== 'topics') return;
-            if (normalizeQuery(state.search) !== q) return;
-            renderTopicsView();
-          })
-          .catch((err) => console.error('global search failed', err));
-      }
-
-      const list = el('div', { class: 'list', id: 'searchResultsList' });
-      if (state.globalSearchPromise && state.globalSearchQuery === q && state.globalSearchResults.length === 0) {
-        list.appendChild(renderEmpty('Suche läuft…'));
-      } else if (state.globalSearchResults.length === 0) {
-        list.appendChild(renderEmpty('Keine Treffer', 'Probiere andere Begriffe oder öffne das Archiv.'));
-      } else {
-        const summary = el('div', { class: 'subtle', style: 'margin-bottom:6px;' }, [
-          `${state.globalSearchResults.length} Treffer`
-        ]);
-        list.appendChild(summary);
-
-        for (const hit of state.globalSearchResults) {
-          const e = hit.entry;
-          const t = hit.topic;
-          const node = el('div', {
-            class: 'item item--search-hit',
-            dataset: { id: e.id, topicId: t.id, kind: 'search-hit' }
-          }, [
-            el('div', { class: 'item__row' }, [
-              entryBadge(e.type),
-              el('div', { class: 'item__title' }, [getEntryDisplayTitle(e)])
-            ]),
-            el('div', { class: 'small item__aux' }, [`${t.title} · Treffer in ${hit.match.label}`]),
-            hit.match.snippet ? el('div', { class: 'small item__aux' }, [hit.match.snippet]) : null
-          ]);
-
-          node.addEventListener('click', async () => {
-            await openTopic(t.id, { preserveSearch: false, focusEntryId: e.id, openEntryId: e.id });
-          });
-
-          list.appendChild(node);
-        }
-      }
-
-      ui.main.innerHTML = '';
-      ui.main.appendChild(list);
-      ui.main.appendChild(renderSidebarFooter());
-      syncKbdActiveAfterRender();
-      return;
+    if (q && (state.globalSearchQuery !== q || state.globalSearchPromise)) {
+      ensureGlobalSearchResults(q)
+        .then(() => {
+          if (state.view !== 'topics') return;
+          if (normalizeQuery(state.search) !== q) return;
+          renderTopicsView();
+        })
+        .catch((err) => console.error('global search failed', err));
     }
 
     const topicSource = q ? state.topicsAll : state.topics;
@@ -77,28 +35,47 @@
         .catch((err) => console.error('topic search index failed', err));
     }
 
-    const topics = topicSource.filter((t) => {
+    const filteredTopics = topicSource.filter((t) => {
       if (matchesTopic(t, q)) return true;
       if (!q || !state.topicEntrySearchIndexReady) return false;
       const entryHay = state.topicEntrySearchIndex.get(t.id) || '';
       return entryHay.includes(q);
     });
+    const topics = prioritizePinned(filteredTopics);
+    const entryHits = q
+      ? [...state.globalSearchResults].sort((a, b) => {
+          const ap = a?.entry?.pinned ? 1 : 0;
+          const bp = b?.entry?.pinned ? 1 : 0;
+          return bp - ap;
+        })
+      : [];
 
     const list = el('div', { class: 'list', id: 'topicsList' });
 
-    if (topics.length === 0) {
+    if (topics.length === 0 && entryHits.length === 0) {
       list.appendChild(renderEmpty('Keine Themen gefunden.', 'Tipp: Lege ein neues Thema an oder schalte „Archiv anzeigen“ ein.'));
     } else {
+      if (q) {
+        list.appendChild(el('div', { class: 'subtle', style: 'margin-bottom:6px;' }, [
+          `${topics.length} Themen · ${entryHits.length} Einträge`
+        ]));
+      }
+
+      if (q && topics.length) {
+        list.appendChild(el('div', { class: 'subtle', style: 'margin:6px 0 4px;' }, ['Themen']));
+      }
+
       for (const t of topics) {
         const statusHint = el('span', { class: 'item__meta topic__status' }, [t.archived ? 'Archiv' : '']);
         const updatedHint = el('span', { class: 'item__meta topic__updated' }, [formatDate(t.updatedAt || t.createdAt)]);
         const node = el('div', {
-          class: 'item item--topic',
-          draggable: 'true',
+          class: `item item--topic${t.highlighted ? ' item--highlighted' : ''}${t.pinned ? ' item--pinned' : ''}`,
+          draggable: t.pinned ? 'false' : 'true',
           dataset: { id: t.id, kind: 'topic' }
         }, [
           el('div', { class: 'item__row' }, [
             el('div', { class: 'item__title' }, [t.title]),
+            t.pinned ? el('span', { class: 'item__pin' }, ['Fixiert']) : null,
             statusHint,
             updatedHint
           ]),
@@ -114,6 +91,22 @@
               label: 'Bearbeiten',
               onClick: async () => {
                 await editTopicFlow(t.id);
+              }
+            },
+            {
+              label: t.pinned ? 'Fixierung lösen' : 'Fixieren',
+              onClick: async () => {
+                await rbDB.updateTopic(state.db, t.id, { pinned: !t.pinned });
+                await refreshTopics();
+                renderTopicsView();
+              }
+            },
+            {
+              label: t.highlighted ? 'Hervorhebung entfernen' : 'Hervorheben',
+              onClick: async () => {
+                await rbDB.updateTopic(state.db, t.id, { highlighted: !t.highlighted });
+                await refreshTopics();
+                renderTopicsView();
               }
             },
             {
@@ -137,6 +130,10 @@
 
         // Topic reorder drag
         node.addEventListener('dragstart', (ev) => {
+          if (t.pinned) {
+            ev.preventDefault();
+            return;
+          }
           closeDropdown();
           state.drag = { type: 'topic', id: t.id };
           ev.dataTransfer.effectAllowed = 'move';
@@ -164,8 +161,10 @@
             const draggedId = state.drag.id;
             const targetId = t.id;
             if (!draggedId || draggedId === targetId) return;
+            const draggedTopic = state.topicsAll.find((item) => item.id === draggedId);
+            if (t.pinned || draggedTopic?.pinned) return;
 
-            const all = topicSource.filter(x => matchesTopic(x, q));
+            const all = topics.filter((item) => !item.pinned);
             const ids = all.map(x => x.id);
             const from = ids.indexOf(draggedId);
             const to = ids.indexOf(targetId);
@@ -174,7 +173,7 @@
             ids.splice(to, 0, draggedId);
 
             // Merge back into full list order: update positions for all non-archived visible topics.
-            const nonArchived = state.topics.filter(x => !x.archived);
+            const nonArchived = state.topics.filter(x => !x.archived && !x.pinned);
             const nonArchivedIds = nonArchived.map(x => x.id);
 
             // If archived topics are shown, we only reorder within the currently filtered list.
@@ -196,6 +195,36 @@
         });
 
         list.appendChild(node);
+      }
+
+      if (q && (state.globalSearchPromise && state.globalSearchQuery === q)) {
+        list.appendChild(el('div', { class: 'subtle', style: 'margin:8px 0 4px;' }, ['Einträge: Suche läuft…']));
+      }
+
+      if (q && entryHits.length) {
+        list.appendChild(el('div', { class: 'subtle', style: 'margin:8px 0 4px;' }, ['Einträge']));
+        for (const hit of entryHits) {
+          const e = hit.entry;
+          const t = hit.topic;
+          const node = el('div', {
+            class: `item item--search-hit${e.highlighted ? ' item--highlighted' : ''}${e.pinned ? ' item--pinned' : ''}`,
+            dataset: { id: e.id, topicId: t.id, kind: 'search-hit' }
+          }, [
+            el('div', { class: 'item__row' }, [
+              entryBadge(e.type),
+              el('div', { class: 'item__title' }, [getEntryDisplayTitle(e)]),
+              e.pinned ? el('span', { class: 'item__pin' }, ['Fixiert']) : null
+            ]),
+            el('div', { class: 'small item__aux' }, [`${t.title} · Treffer in ${hit.match.label}`]),
+            hit.match.snippet ? el('div', { class: 'small item__aux' }, [hit.match.snippet]) : null
+          ]);
+
+          node.addEventListener('click', async () => {
+            await openTopic(t.id, { preserveSearch: false, focusEntryId: e.id, openEntryId: e.id });
+          });
+
+          list.appendChild(node);
+        }
       }
     }
 
@@ -289,8 +318,8 @@
         ]);
 
         const node = el('div', {
-          class: `item item--entry${isLink ? ' item--entry-link' : ''}`,
-          draggable: isCustomOrder ? 'true' : 'false',
+          class: `item item--entry${isLink ? ' item--entry-link' : ''}${e.highlighted ? ' item--highlighted' : ''}${e.pinned ? ' item--pinned' : ''}`,
+          draggable: isCustomOrder && !e.pinned ? 'true' : 'false',
           dataset: { id: e.id, kind: 'entry' }
         }, [
           el('div', { class: 'item__hover-tools' }, [
@@ -301,6 +330,7 @@
               entryBadge(e.type)
             ]),
             el('div', { class: 'item__title' }, [getEntryDisplayTitle(e)]),
+            e.pinned ? el('span', { class: 'item__pin' }, ['Fixiert']) : null,
             isTodo ? el('div', { class: 'item__meta' }, [getTodoSummary(e)]) : null
           ])
         ]);
@@ -324,6 +354,22 @@
               }
             },
             {
+              label: e.pinned ? 'Fixierung lösen' : 'Fixieren',
+              onClick: async () => {
+                await rbDB.updateEntry(state.db, e.id, { pinned: !e.pinned });
+                await refreshEntries();
+                renderTopicView();
+              }
+            },
+            {
+              label: e.highlighted ? 'Hervorhebung entfernen' : 'Hervorheben',
+              onClick: async () => {
+                await rbDB.updateEntry(state.db, e.id, { highlighted: !e.highlighted });
+                await refreshEntries();
+                renderTopicView();
+              }
+            },
+            {
               label: 'Löschen',
               hint: 'Mit Rückgängig-Option',
               danger: true,
@@ -339,7 +385,7 @@
 
         // Reorder drag
         node.addEventListener('dragstart', (ev) => {
-          if (!isCustomOrder) {
+          if (!isCustomOrder || e.pinned) {
             ev.preventDefault();
             return;
           }
@@ -366,8 +412,10 @@
           const draggedId = state.drag.id;
           const targetId = e.id;
           if (!draggedId || draggedId === targetId) return;
+          const draggedEntry = state.entries.find((item) => item.id === draggedId);
+          if (e.pinned || draggedEntry?.pinned) return;
 
-          const visible = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab);
+          const visible = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab).filter((item) => !item.pinned);
           const ids = visible.map(x => x.id);
           const from = ids.indexOf(draggedId);
           const to = ids.indexOf(targetId);
@@ -376,7 +424,7 @@
           ids.splice(to, 0, draggedId);
 
           // Apply reorder to all entries in topic by merging unchanged ones behind.
-          const allIds = state.entries.map(x => x.id);
+          const allIds = state.entries.filter((item) => !item.pinned).map(x => x.id);
           const merged = [...new Set(ids.concat(allIds.filter(x => !ids.includes(x))))];
 
           await rbDB.reorderEntries(state.db, state.currentTopicId, merged);

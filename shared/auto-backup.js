@@ -100,6 +100,8 @@
       description: topic.description || '',
       color: topic.color || '',
       archived: !!topic.archived,
+      highlighted: !!topic.highlighted,
+      pinned: !!topic.pinned,
       position: Number.isFinite(topic.position) ? topic.position : 0,
       createdAt: topic.createdAt || '',
       updatedAt: topic.updatedAt || ''
@@ -125,6 +127,8 @@
       excerpt: entry.excerpt || '',
       note: entry.note || '',
       todos: rbDB.normalizeTodoItems(entry.todos),
+      highlighted: !!entry.highlighted,
+      pinned: !!entry.pinned,
       position: Number.isFinite(entry.position) ? entry.position : 0,
       createdAt: entry.createdAt || '',
       updatedAt: entry.updatedAt || ''
@@ -440,6 +444,8 @@
         description: topic.description || '',
         color: topic.color || '',
         archived: !!topic.archived,
+        highlighted: !!topic.highlighted,
+        pinned: !!topic.pinned,
         createdAt: topic.createdAt || rbDB.nowIso(),
         updatedAt: topic.updatedAt || rbDB.nowIso(),
         position: Number.isFinite(topic.position) ? topic.position : 1
@@ -460,6 +466,8 @@
         excerpt: entry.excerpt || '',
         note: entry.note || '',
         todos: rbDB.normalizeTodoItems(entry.todos),
+        highlighted: !!entry.highlighted,
+        pinned: !!entry.pinned,
         createdAt: entry.createdAt || rbDB.nowIso(),
         updatedAt: entry.updatedAt || rbDB.nowIso(),
         position: Number.isFinite(entry.position) ? entry.position : 1
