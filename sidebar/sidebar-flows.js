@@ -411,6 +411,36 @@
     const excerptInput = el('textarea', { class: 'textarea', value: entry.excerpt || '' });
     const noteInput = el('textarea', { class: 'textarea', value: entry.note || '' });
     const todoEditor = entry.type === 'todo' ? createTodoEditor(entry.todos || []) : null;
+    const sourceUrl = String(entry.sourcePageUrl || '').trim();
+
+    const copySourceUrl = async () => {
+      if (!sourceUrl) return;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(sourceUrl);
+          toast('Quell-URL kopiert');
+          return;
+        }
+        throw new Error('clipboard api unavailable');
+      } catch (error) {
+        try {
+          const ta = el('textarea', { value: sourceUrl });
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          ta.style.top = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const copied = document.execCommand('copy');
+          ta.remove();
+          if (!copied) throw new Error('execCommand copy failed');
+          toast('Quell-URL kopiert');
+        } catch (fallbackError) {
+          console.error('copy source url failed', error, fallbackError);
+          toast('Quell-URL konnte nicht kopiert werden');
+        }
+      }
+    };
 
     const body = el('div', {}, [
       el('div', { class: 'entry-meta' }, [
@@ -460,10 +490,16 @@
           ])
         : null,
 
-      (entry.sourcePageUrl || entry.sourcePageTitle) ? el('div', { class: 'card', style: 'margin-top:12px; background: color-mix(in oklab, var(--surface) 75%, var(--bg));' }, [
+      (sourceUrl || entry.sourcePageTitle) ? el('div', { class: 'card source-card', style: 'margin-top:12px; background: color-mix(in oklab, var(--surface) 75%, var(--bg));' }, [
         el('div', { class: 'label' }, ['Quelle']),
         entry.sourcePageTitle ? el('div', { class: 'small' }, [entry.sourcePageTitle]) : null,
-        entry.sourcePageUrl ? el('div', { class: 'small mono' }, [entry.sourcePageUrl]) : null
+        sourceUrl ? el('div', { class: 'small mono source-card__url', title: sourceUrl }, [sourceUrl]) : null,
+        sourceUrl ? el('div', { class: 'actions source-card__actions' }, [
+          el('button', { class: 'btn btn--xs', onclick: async () => {
+            await ext.runtime.sendMessage({ type: 'openUrlInTab', url: sourceUrl }).catch(() => {});
+          } }, ['Quelle öffnen']),
+          el('button', { class: 'btn btn--xs btn--quiet', onclick: copySourceUrl }, ['URL kopieren'])
+        ]) : null
       ]) : null
     ]);
 

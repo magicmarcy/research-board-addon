@@ -1084,6 +1084,25 @@ select {
   flex: 0 0 auto;
 }
 
+.source-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.source-card__url {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-card__actions {
+  margin-top: 8px;
+  justify-content: flex-start;
+}
+
 @media (max-width: 380px) {
   .entry-meta__dates {
     flex-direction: column;
