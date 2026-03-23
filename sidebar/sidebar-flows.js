@@ -27,6 +27,10 @@
     if (focusEntryId || openEntryId) {
       const targetEntryId = focusEntryId || openEntryId;
       const targetEntry = state.entries.find((entry) => entry.id === targetEntryId) || null;
+      if (targetEntry?.archived && !state.includeArchivedEntries) {
+        state.includeArchivedEntries = true;
+        await saveSettings({ includeArchivedEntries: true });
+      }
       state.currentTopicEntryTab = targetEntry?.type || 'all';
     } else {
       state.currentTopicEntryTab = 'all';
@@ -153,6 +157,21 @@
     } else {
       render();
     }
+  }
+
+  /**
+   * Archive or restore an entry.
+   *
+   * @param {string} entryId Entry identifier.
+   * @param {boolean} archived Target archive state.
+   * @returns {Promise<void>}
+   */
+  async function archiveEntryFlow(entryId, archived) {
+    await rbDB.setEntryArchived(state.db, entryId, archived);
+    markTopicSearchIndexDirty();
+    await refreshEntries();
+    renderTopicView();
+    toast(archived ? 'Eintrag archiviert' : 'Eintrag wiederhergestellt');
   }
 
   /**
@@ -838,6 +857,7 @@
       const item = keepIds ? e : { ...e, id: rbDB.uuid() };
       if (!item.createdAt) item.createdAt = rbDB.nowIso();
       if (!item.updatedAt) item.updatedAt = item.createdAt;
+      if (typeof item.archived !== 'boolean') item.archived = !!item.archived;
       if (typeof item.position !== 'number') item.position = 1;
       eStore.put(item);
     }
@@ -1196,4 +1216,3 @@
     ]);
     openModal({ title: 'Zurücksetzen', body, footer });
   }
-

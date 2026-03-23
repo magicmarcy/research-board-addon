@@ -61,6 +61,8 @@
   const state = {
     db: null,
     includeArchived: false,
+    includeArchivedEntries: false,
+    archivedEntryCountByTopic: new Map(),
     topics: [],
     topicsAll: [],
     topicEntrySearchIndex: new Map(),
@@ -244,6 +246,9 @@
           excerpt: snapshot.excerpt,
           note: snapshot.note,
           todos: snapshot.todos,
+          archived: snapshot.archived,
+          highlighted: snapshot.highlighted,
+          pinned: snapshot.pinned,
           position: snapshot.position
         });
         markTopicSearchIndexDirty();
@@ -263,7 +268,7 @@
   async function deleteTopicWithUndo(topicId) {
     const topic = await rbDB.getTopic(state.db, topicId);
     if (!topic) return;
-    const entries = await rbDB.getEntriesByTopic(state.db, topicId);
+    const entries = await rbDB.getEntriesByTopic(state.db, topicId, { includeArchived: true });
 
     await rbDB.deleteTopic(state.db, topicId);
     await refreshTopics();
@@ -891,8 +896,9 @@
    * @param {string} [entryTab='all'] Active tab key.
    * @returns {Array<object>} Visible entries.
    */
-  function getVisibleTopicEntries(entries, query, entryTab = 'all') {
+  function getVisibleTopicEntries(entries, query, entryTab = 'all', includeArchived = false) {
     return entries.filter((entry) => {
+      if (!includeArchived && entry?.archived) return false;
       if (entryTab !== 'all' && entry.type !== entryTab) return false;
       return matchesEntry(entry, query);
     });
@@ -1309,8 +1315,9 @@
    * @returns {Promise<void>}
    */
   async function loadSettings() {
-    const settings = await ext.storage.local.get({ lastTopicId: null, includeArchived: false });
+    const settings = await ext.storage.local.get({ lastTopicId: null, includeArchived: false, includeArchivedEntries: false });
     state.includeArchived = !!settings.includeArchived;
+    state.includeArchivedEntries = !!settings.includeArchivedEntries;
     state.currentTopicId = settings.lastTopicId;
   }
 
@@ -1332,6 +1339,13 @@
   async function refreshTopics() {
     state.topicsAll = await rbDB.getAllTopics(state.db, { includeArchived: true });
     state.topics = await rbDB.getAllTopics(state.db, { includeArchived: state.includeArchived });
+    const allEntries = await rbDB.getAllEntries(state.db);
+    const archivedEntryCountByTopic = new Map();
+    for (const entry of allEntries) {
+      if (!entry?.topicId || !entry?.archived) continue;
+      archivedEntryCountByTopic.set(entry.topicId, (archivedEntryCountByTopic.get(entry.topicId) || 0) + 1);
+    }
+    state.archivedEntryCountByTopic = archivedEntryCountByTopic;
     // If last selected topic is archived and we're not including archived, pick first non-archived.
     const exists = state.topics.some(t => t.id === state.currentTopicId);
     if (!exists) {
@@ -1353,7 +1367,7 @@
       return;
     }
     const topic = state.topicsAll.find((item) => item.id === state.currentTopicId) || state.topics.find((item) => item.id === state.currentTopicId) || null;
-    const rawEntries = await rbDB.getEntriesByTopic(state.db, state.currentTopicId);
+    const rawEntries = await rbDB.getEntriesByTopic(state.db, state.currentTopicId, { includeArchived: true });
     state.entries = sortEntriesForTopic(rawEntries, topic);
   }
 
@@ -1394,6 +1408,7 @@
     ui.topbarActions?.classList.remove('hidden');
     ui.topicbarActions?.classList.add('hidden');
     ui.themeToggleBtn?.classList.remove('hidden');
+    updateArchiveToggleButton();
   }
 
   /**
@@ -1414,12 +1429,16 @@
     ui.themeToggleBtn?.classList.add('hidden');
     const archiveBtn = ui.qaTopicArchiveBtn;
     if (archiveBtn) {
-      const archived = !!topic?.archived;
-      const label = archived ? 'Thema wiederherstellen' : 'Thema archivieren';
+      const hasArchivedEntries = (state.archivedEntryCountByTopic.get(topic?.id) || 0) > 0;
+      const label = hasArchivedEntries
+        ? (state.includeArchivedEntries ? 'Archivierte Einträge ausblenden' : 'Archivierte Einträge anzeigen')
+        : 'Keine archivierten Einträge vorhanden';
       archiveBtn.title = label;
       archiveBtn.setAttribute('aria-label', label);
+      archiveBtn.disabled = !hasArchivedEntries;
+      archiveBtn.classList.toggle('iconbtn--alert', hasArchivedEntries && !state.includeArchivedEntries);
       const iconNode = archiveBtn.querySelector('.icon');
-      if (iconNode) iconNode.textContent = archived ? '↺' : '🗃';
+      if (iconNode) iconNode.textContent = state.includeArchivedEntries ? '🗂' : '🗃';
     }
   }
 
@@ -1431,9 +1450,14 @@
   function updateArchiveToggleButton() {
     const btn = ui.qaArchiveToggleBtn;
     if (!btn) return;
-    const label = state.includeArchived ? 'Archiv ausblenden' : 'Archiv anzeigen';
+    const hasArchivedTopics = state.topicsAll.some((topic) => !!topic?.archived);
+    const label = hasArchivedTopics
+      ? (state.includeArchived ? 'Archiv ausblenden' : 'Archiv anzeigen')
+      : 'Keine archivierten Themen vorhanden';
     btn.title = label;
     btn.setAttribute('aria-label', label);
+    btn.disabled = !hasArchivedTopics;
+    btn.classList.toggle('iconbtn--alert', hasArchivedTopics && !state.includeArchived);
     const iconNode = btn.querySelector('.icon');
     if (iconNode) iconNode.textContent = state.includeArchived ? '🗂' : '🗃';
   }

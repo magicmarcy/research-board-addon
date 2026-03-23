@@ -3,14 +3,18 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.9.4**
+Aktuelle Version: **1.10.0**
 
 ## Features
 
 - Themen verwalten: anlegen, bearbeiten, sortieren, archivieren, löschen
 - Einträge erfassen: Link, Textzitat, Notiz, Todo, aktuelle Seite
+- Einträge archivieren und bei Bedarf im Thema wieder einblenden
+- Dezente Archiv-Hinweise direkt am Archiv-Button:
+  - Auf der Themenübersicht bei vorhandenen archivierten Themen
+  - Im geöffneten Thema bei vorhandenen archivierten Einträgen
 - Rechtsklick-Menüs in der Sidebar für Themen und Einträge:
-  - Einträge bearbeiten, verschieben oder löschen
+  - Einträge bearbeiten, verschieben, archivieren/wiederherstellen oder löschen
   - Themen bearbeiten, archivieren/wiederherstellen oder löschen
   - Themen und Einträge hervorheben bzw. Hervorhebung entfernen
   - Themen und Einträge fixieren/lösen
@@ -24,6 +28,10 @@ Aktuelle Version: **1.9.4**
   - `Alle` zeigt weiterhin die komplette Themenliste mit bestehender Sortierlogik
   - Zusätzliche Tabs wie `Links`, `Notizen`, `Textauszüge` oder `Todos` erscheinen nur bei vorhandenen Einträgen
   - Sortierung und manuelles Umordnen funktionieren auch innerhalb der typgefilterten Ansicht
+- Archiv-Toggle pro Ansicht:
+  - In der Themenübersicht lassen sich archivierte Themen ein- und ausblenden
+  - Innerhalb eines Themas lassen sich archivierte Einträge ein- und ausblenden
+  - Der jeweilige Archiv-Button ist deaktiviert, wenn es nichts anzuzeigen gibt
 - Tastatur-Navigation:
   - `Ctrl+K` fokussiert die Suche direkt
   - In Themenansicht wechseln `←` und `→` zwischen den Typ-Tabs
@@ -119,9 +127,10 @@ Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
    - Oder per Drag-and-Drop in die Dropzone ziehen
 4. Innerhalb eines Themas bei Bedarf über Tabs nach Eintragstyp filtern und dort weiter sortieren.
 5. Daten bei Bedarf exportieren/importieren (JSON).
-6. Auto-Backups in den Add-on-Einstellungen konfigurieren.
+6. Archivierte Themen oder Einträge bei Bedarf über den jeweiligen Archiv-Button einblenden.
+7. Auto-Backups in den Add-on-Einstellungen konfigurieren.
    - Backups werden zusätzlich bei Datenänderungen zuverlässig (debounced) ausgelöst.
-7. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL; mehrere Quellen per Zeilenumbruch, `;`, `,` oder `|`).
+8. Optional in den Einstellungen eine URL-Umschreibung definieren (`{value}` als Platzhalter in der Ziel-URL; mehrere Quellen per Zeilenumbruch, `;`, `,` oder `|`).
 
 ## Berechtigungen
 

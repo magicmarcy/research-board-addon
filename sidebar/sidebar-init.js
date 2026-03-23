@@ -72,6 +72,7 @@
 
   ui.qaArchiveToggleBtn?.addEventListener('click', async (ev) => {
     ev.stopPropagation();
+    if (ui.qaArchiveToggleBtn.disabled) return;
     state.includeArchived = !state.includeArchived;
     await saveSettings({ includeArchived: state.includeArchived });
     await refreshTopics();
@@ -94,11 +95,13 @@
     editTopicFlow(state.currentTopicId);
   });
 
-  ui.qaTopicArchiveBtn?.addEventListener('click', (ev) => {
+  ui.qaTopicArchiveBtn?.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     if (!state.currentTopicId) return;
-    const topic = state.topics.find(t => t.id === state.currentTopicId);
-    archiveTopicFlow(state.currentTopicId, !topic?.archived);
+    if (ui.qaTopicArchiveBtn.disabled) return;
+    state.includeArchivedEntries = !state.includeArchivedEntries;
+    await saveSettings({ includeArchivedEntries: state.includeArchivedEntries });
+    renderTopicView();
   });
 
   ui.qaTopicDeleteBtn?.addEventListener('click', (ev) => {

@@ -2,7 +2,7 @@
   Research Board DB (IndexedDB)
   Stores:
     - topics: { id, title, description?, color?, createdAt, updatedAt, archived, highlighted?, pinned?, position }
-    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, todos?, highlighted?, pinned?, createdAt, updatedAt, position }
+    - entries: { id, topicId, type, title?, url?, sourcePageTitle?, sourcePageUrl?, linkText?, excerpt?, note?, todos?, archived?, highlighted?, pinned?, createdAt, updatedAt, position }
     - backups: { id, createdAt, reason, signature, snapshot }
 */
 
@@ -23,7 +23,7 @@
    * they are somewhat verbose.
    */
   const DB_NAME = 'research_board_db';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   const MIN_POSITION = 0;
   const MAX_POSITION = Number.MAX_SAFE_INTEGER;
   const CHANGE_STATE_KEYS = {
@@ -34,6 +34,7 @@
   const APP_SETTINGS_KEYS = {
     lastTopicId: 'lastTopicId',
     includeArchived: 'includeArchived',
+    includeArchivedEntries: 'includeArchivedEntries',
     themeMode: 'themeMode',
     autoBackupConfig: 'rbAutoBackupConfig',
     urlTransformConfig: 'urlTransformConfig'
@@ -41,6 +42,7 @@
   const APP_SETTINGS_DEFAULTS = {
     [APP_SETTINGS_KEYS.lastTopicId]: null,
     [APP_SETTINGS_KEYS.includeArchived]: false,
+    [APP_SETTINGS_KEYS.includeArchivedEntries]: false,
     [APP_SETTINGS_KEYS.themeMode]: 'light',
     [APP_SETTINGS_KEYS.autoBackupConfig]: {
       enabled: true,
@@ -100,8 +102,10 @@
   function openDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (event) => {
         const db = req.result;
+        const tx = req.transaction;
+        const oldVersion = Number(event.oldVersion || 0);
 
         if (!db.objectStoreNames.contains('topics')) {
           const topics = db.createObjectStore('topics', { keyPath: 'id' });
@@ -115,9 +119,28 @@
           const entries = db.createObjectStore('entries', { keyPath: 'id' });
           entries.createIndex('by_topic', 'topicId', { unique: false });
           entries.createIndex('by_topic_position', ['topicId', 'position'], { unique: false });
+          entries.createIndex('by_topic_archived_position', ['topicId', 'archived', 'position'], { unique: false });
           entries.createIndex('by_updatedAt', 'updatedAt', { unique: false });
           entries.createIndex('by_type', 'type', { unique: false });
           entries.createIndex('by_url', 'url', { unique: false });
+        } else if (oldVersion < 4 && tx) {
+          const entries = tx.objectStore('entries');
+          if (!entries.indexNames.contains('by_topic_archived_position')) {
+            entries.createIndex('by_topic_archived_position', ['topicId', 'archived', 'position'], { unique: false });
+          }
+
+          entries.openCursor().onsuccess = (cursorEvent) => {
+            const cur = cursorEvent.target.result;
+            if (!cur) return;
+            const value = cur.value || {};
+            let changed = false;
+            if (typeof value.archived !== 'boolean') {
+              value.archived = !!value.archived;
+              changed = true;
+            }
+            if (changed) cur.update(value);
+            cur.continue();
+          };
         }
 
         if (!db.objectStoreNames.contains('backups')) {
@@ -245,14 +268,15 @@
    * @param {string} topicId Topic identifier.
    * @returns {Promise<object[]>} Entry list for the topic.
    */
-  async function getEntriesByTopicFallback(db, topicId) {
+  async function getEntriesByTopicFallback(db, topicId, includeArchived = false) {
     if (!topicId) return [];
     const tx = db.transaction(['entries'], 'readonly');
     const store = tx.objectStore('entries');
     const all = await reqToPromise(store.getAll());
     return all
-      .filter((e) => e?.topicId === topicId)
+      .filter((e) => e?.topicId === topicId && (includeArchived ? true : !e?.archived))
       .sort((a, b) => {
+        if (!!a?.archived !== !!b?.archived) return (a?.archived ? 1 : 0) - (b?.archived ? 1 : 0);
         const ap = Number.isFinite(a?.position) ? a.position : Number.MAX_SAFE_INTEGER;
         const bp = Number.isFinite(b?.position) ? b.position : Number.MAX_SAFE_INTEGER;
         if (ap !== bp) return ap - bp;
@@ -306,13 +330,13 @@
    * @param {string} topicId Topic identifier.
    * @returns {Promise<number>} Next position value.
    */
-  async function getNextEntryPosition(db, topicId) {
+  async function getNextEntryPosition(db, topicId, archived = false) {
     if (!topicId) return 1;
     try {
       const tx = db.transaction(['entries'], 'readonly');
       const store = tx.objectStore('entries');
-      const idx = store.index('by_topic_position');
-      const range = IDBKeyRange.bound([topicId, MIN_POSITION], [topicId, MAX_POSITION]);
+      const idx = store.index('by_topic_archived_position');
+      const range = IDBKeyRange.bound([topicId, !!archived, MIN_POSITION], [topicId, !!archived, MAX_POSITION]);
 
       return await new Promise((resolve, reject) => {
         const cursorReq = idx.openCursor(range, 'prev');
@@ -329,8 +353,9 @@
       });
     } catch (error) {
       if (!isDataError(error)) throw error;
-      const entries = await getEntriesByTopicFallback(db, topicId);
-      const last = entries[entries.length - 1];
+      const entries = await getEntriesByTopicFallback(db, topicId, true);
+      const bucketEntries = entries.filter((entry) => !!entry?.archived === !!archived);
+      const last = bucketEntries[bucketEntries.length - 1];
       const lastPos = Number.isFinite(last?.position) ? last.position : 0;
       return lastPos + 1;
     }
@@ -517,32 +542,34 @@
    * @param {string} topicId Topic identifier.
    * @returns {Promise<object[]>} Entry list.
    */
-  async function getEntriesByTopic(db, topicId) {
+  async function getEntriesByTopic(db, topicId, { includeArchived = false } = {}) {
     if (!topicId) return [];
     try {
       const tx = db.transaction(['entries'], 'readonly');
       const store = tx.objectStore('entries');
-      const idx = store.index('by_topic_position');
-      const range = IDBKeyRange.bound([topicId, MIN_POSITION], [topicId, MAX_POSITION]);
-
       const results = [];
-      await new Promise((resolve, reject) => {
-        const cursorReq = idx.openCursor(range, 'next');
-        cursorReq.onsuccess = () => {
-          const cur = cursorReq.result;
-          if (!cur) {
-            resolve();
-            return;
-          }
-          results.push(cur.value);
-          cur.continue();
-        };
-        cursorReq.onerror = () => reject(cursorReq.error);
-      });
+      const idx = store.index('by_topic_archived_position');
+      const archivedVals = includeArchived ? [false, true] : [false];
+      for (const archived of archivedVals) {
+        const range = IDBKeyRange.bound([topicId, archived, MIN_POSITION], [topicId, archived, MAX_POSITION]);
+        await new Promise((resolve, reject) => {
+          const cursorReq = idx.openCursor(range, 'next');
+          cursorReq.onsuccess = () => {
+            const cur = cursorReq.result;
+            if (!cur) {
+              resolve();
+              return;
+            }
+            results.push(cur.value);
+            cur.continue();
+          };
+          cursorReq.onerror = () => reject(cursorReq.error);
+        });
+      }
       return results;
     } catch (error) {
       if (!isDataError(error)) throw error;
-      return getEntriesByTopicFallback(db, topicId);
+      return getEntriesByTopicFallback(db, topicId, includeArchived);
     }
   }
 
@@ -580,11 +607,12 @@
       excerpt: entryInput.excerpt ?? '',
       note: entryInput.note ?? '',
       todos: normalizeTodoItems(entryInput.todos),
+      archived: !!entryInput.archived,
       highlighted: !!entryInput.highlighted,
       pinned: !!entryInput.pinned,
       createdAt,
       updatedAt: createdAt,
-      position: typeof entryInput.position === 'number' ? entryInput.position : await getNextEntryPosition(db, topicId)
+      position: typeof entryInput.position === 'number' ? entryInput.position : await getNextEntryPosition(db, topicId, !!entryInput.archived)
     };
 
     await withTx(db, ['entries'], 'readwrite', (tx) => {
@@ -613,6 +641,9 @@
       ...cur,
       ...patch,
       todos: Object.prototype.hasOwnProperty.call(patch || {}, 'todos') ? normalizeTodoItems(patch.todos) : normalizeTodoItems(cur.todos),
+      archived: Object.prototype.hasOwnProperty.call(patch || {}, 'archived')
+        ? !!patch.archived
+        : !!cur.archived,
       highlighted: Object.prototype.hasOwnProperty.call(patch || {}, 'highlighted')
         ? !!patch.highlighted
         : !!cur.highlighted,
@@ -628,6 +659,37 @@
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
+    });
+    await touchChangeToken();
+
+    return updated;
+  }
+
+  /**
+   * Archive or restore an entry and move it to the end of the target archive bucket.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {string} id Entry identifier.
+   * @param {boolean} archived Target archive state.
+   * @returns {Promise<object>} Updated entry record.
+   */
+  async function setEntryArchived(db, id, archived) {
+    const txRead = db.transaction(['entries'], 'readonly');
+    const current = await reqToPromise(txRead.objectStore('entries').get(id));
+    if (!current) throw new Error('Entry not found');
+
+    const nextArchived = !!archived;
+    if (!!current.archived === nextArchived) return current;
+
+    const updated = {
+      ...current,
+      archived: nextArchived,
+      position: await getNextEntryPosition(db, current.topicId, nextArchived),
+      updatedAt: nowIso()
+    };
+
+    await withTx(db, ['entries'], 'readwrite', (tx) => {
+      tx.objectStore('entries').put(updated);
     });
     await touchChangeToken();
 
@@ -672,8 +734,11 @@
 
     let nextPosition = 1;
     try {
-      const idx = entriesStore.index('by_topic_position');
-      const range = IDBKeyRange.bound([targetTopicId, MIN_POSITION], [targetTopicId, MAX_POSITION]);
+      const idx = entriesStore.index('by_topic_archived_position');
+      const range = IDBKeyRange.bound(
+        [targetTopicId, !!entry.archived, MIN_POSITION],
+        [targetTopicId, !!entry.archived, MAX_POSITION]
+      );
       nextPosition = await new Promise((resolve, reject) => {
         const cursorReq = idx.openCursor(range, 'prev');
         cursorReq.onsuccess = () => {
@@ -691,7 +756,7 @@
       if (!isDataError(error)) throw error;
       // Fall back to scanning all entries if the compound index cannot be used.
       const all = await reqToPromise(entriesStore.getAll());
-      const targetEntries = all.filter((item) => item?.topicId === targetTopicId);
+      const targetEntries = all.filter((item) => item?.topicId === targetTopicId && !!item?.archived === !!entry?.archived);
       const maxPos = targetEntries.reduce((max, item) => (
         Number.isFinite(item?.position) && item.position > max ? item.position : max
       ), 0);
@@ -753,7 +818,7 @@
    * @param {string[]} orderedEntryIds Entry ids in desired order.
    * @returns {Promise<void>}
    */
-  async function reorderEntries(db, topicId, orderedEntryIds) {
+  async function reorderEntries(db, topicId, orderedEntryIds, { archived = false } = {}) {
     const tx = db.transaction(['entries'], 'readwrite');
     const store = tx.objectStore('entries');
 
@@ -762,6 +827,7 @@
       const entry = await reqToPromise(store.get(id));
       if (!entry) continue;
       if (entry.topicId !== topicId) continue;
+      if (!!entry.archived !== !!archived) continue;
       entry.position = i + 1;
       entry.updatedAt = nowIso();
       store.put(entry);
@@ -806,6 +872,7 @@
     return {
       [APP_SETTINGS_KEYS.lastTopicId]: input[APP_SETTINGS_KEYS.lastTopicId] || null,
       [APP_SETTINGS_KEYS.includeArchived]: !!input[APP_SETTINGS_KEYS.includeArchived],
+      [APP_SETTINGS_KEYS.includeArchivedEntries]: !!input[APP_SETTINGS_KEYS.includeArchivedEntries],
       [APP_SETTINGS_KEYS.themeMode]: input[APP_SETTINGS_KEYS.themeMode] === 'dark' ? 'dark' : 'light',
       [APP_SETTINGS_KEYS.autoBackupConfig]: {
         enabled: autoBackupConfigRaw?.enabled ?? APP_SETTINGS_DEFAULTS[APP_SETTINGS_KEYS.autoBackupConfig].enabled,
@@ -891,7 +958,7 @@
   async function exportTopic(db, topicId) {
     const topic = await getTopic(db, topicId);
     if (!topic) throw new Error('Topic not found');
-    const entries = await getEntriesByTopic(db, topicId);
+    const entries = await getEntriesByTopic(db, topicId, { includeArchived: true });
     const settings = await exportAppSettings();
 
     return {
@@ -1023,6 +1090,7 @@
     getAllEntries,
     addEntry,
     updateEntry,
+    setEntryArchived,
     deleteEntry,
     moveEntryToTopic,
     reorderTopics,

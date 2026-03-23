@@ -242,7 +242,8 @@
   function renderTopicView() {
     state.view = 'topic';
     const topic = state.topicsAll.find(t => t.id === state.currentTopicId) || state.topics.find(t => t.id === state.currentTopicId);
-    const tabs = getAvailableTopicEntryTabs(state.entries);
+    const entriesForTabs = state.entries.filter((entry) => state.includeArchivedEntries || !entry.archived);
+    const tabs = getAvailableTopicEntryTabs(entriesForTabs);
     if (!tabs.some((tab) => tab.key === state.currentTopicEntryTab)) {
       state.currentTopicEntryTab = 'all';
     }
@@ -251,7 +252,7 @@
     setHeaderForTopic(topic);
 
     const q = normalizeQuery(state.search);
-    const entries = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab);
+    const entries = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab, state.includeArchivedEntries);
     const sortBtn = el('button', {
       class: 'btn btn--icon',
       type: 'button',
@@ -297,7 +298,7 @@
     if (entries.length === 0) {
       const emptyText = state.entries.length === 0
         ? 'Nutze „Link“, „Aktuelle Seite“, „Textauszug“ oder „Notiz“, um den ersten Eintrag anzulegen.'
-        : 'Keine Einträge für den gewählten Tab gefunden.';
+        : (state.includeArchivedEntries ? 'Keine Einträge für den gewählten Tab gefunden.' : 'Keine aktiven Einträge für den gewählten Tab gefunden.');
       list.appendChild(el('div', { class: 'subtle' }, [emptyText]));
     } else {
       for (const e of entries) {
@@ -332,6 +333,7 @@
             ]),
             el('div', { class: 'item__title' }, [getEntryDisplayTitle(e)]),
             e.pinned ? el('span', { class: 'item__pin' }, ['Fixiert']) : null,
+            e.archived ? el('span', { class: 'item__meta' }, ['Archiv']) : null,
             isTodo ? el('div', { class: 'item__meta' }, [getTodoSummary(e)]) : null
           ])
         ]);
@@ -368,6 +370,12 @@
                 await rbDB.updateEntry(state.db, e.id, { highlighted: !e.highlighted });
                 await refreshEntries();
                 renderTopicView();
+              }
+            },
+            {
+              label: e.archived ? 'Wiederherstellen' : 'Archivieren',
+              onClick: async () => {
+                await archiveEntryFlow(e.id, !e.archived);
               }
             },
             {
@@ -415,8 +423,14 @@
           if (!draggedId || draggedId === targetId) return;
           const draggedEntry = state.entries.find((item) => item.id === draggedId);
           if (e.pinned || draggedEntry?.pinned) return;
+          if (!!draggedEntry?.archived !== !!e.archived) return;
 
-          const visible = getVisibleTopicEntries(state.entries, q, state.currentTopicEntryTab).filter((item) => !item.pinned);
+          const visible = getVisibleTopicEntries(
+            state.entries,
+            q,
+            state.currentTopicEntryTab,
+            state.includeArchivedEntries
+          ).filter((item) => !item.pinned && !!item.archived === !!e.archived);
           const ids = visible.map(x => x.id);
           const from = ids.indexOf(draggedId);
           const to = ids.indexOf(targetId);
@@ -425,10 +439,12 @@
           ids.splice(to, 0, draggedId);
 
           // Apply reorder to all entries in topic by merging unchanged ones behind.
-          const allIds = state.entries.filter((item) => !item.pinned).map(x => x.id);
+          const allIds = state.entries
+            .filter((item) => !item.pinned && !!item.archived === !!e.archived)
+            .map(x => x.id);
           const merged = [...new Set(ids.concat(allIds.filter(x => !ids.includes(x))))];
 
-          await rbDB.reorderEntries(state.db, state.currentTopicId, merged);
+          await rbDB.reorderEntries(state.db, state.currentTopicId, merged, { archived: !!e.archived });
           await refreshEntries();
           render();
           toast('Einträge sortiert');

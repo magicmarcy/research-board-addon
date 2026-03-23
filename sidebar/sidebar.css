@@ -152,7 +152,21 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   box-shadow: var(--btn-shadow);
+}
+
+.iconbtn--alert::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #d63b3b;
+  box-shadow: 0 0 0 2px var(--surface2);
+  pointer-events: none;
 }
 
 .iconbtn:hover,
@@ -249,6 +263,12 @@ select {
 }
 
 .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.iconbtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
