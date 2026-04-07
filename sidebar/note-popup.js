@@ -36,13 +36,18 @@
 
   const channel = new BroadcastChannel(channelId);
   channel.postMessage({ type: 'popupReady' });
+  let saveRequestSeq = 0;
+  let lastAckedSaveSeq = 0;
 
   /**
    * Notify the opener that the popup is closing and then close the popup window.
    *
    * @returns {void}
    */
-  const close = () => {
+  const close = async () => {
+    if (saveRequestSeq > lastAckedSaveSeq) {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
     try {
       channel.postMessage({ type: 'close' });
       channel.close();
@@ -66,7 +71,8 @@
    * @returns {void}
    */
   const saveWithoutClose = () => {
-    channel.postMessage({ type: 'saveNoClose', value: editor.value });
+    saveRequestSeq += 1;
+    channel.postMessage({ type: 'saveNoClose', value: editor.value, requestId: saveRequestSeq });
   };
 
   /**
@@ -81,6 +87,13 @@
     if (msg.type === 'initValue') {
       editor.value = String(msg.value ?? '');
       editor.focus();
+      return;
+    }
+    if (msg.type === 'saveNoCloseAck') {
+      const ackId = Number(msg.requestId);
+      if (Number.isFinite(ackId) && ackId > lastAckedSaveSeq) {
+        lastAckedSaveSeq = ackId;
+      }
     }
   };
 
@@ -92,7 +105,7 @@
   window.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
       ev.preventDefault();
-      close();
+      void close();
       return;
     }
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {

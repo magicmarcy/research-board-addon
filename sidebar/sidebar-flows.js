@@ -545,6 +545,7 @@
           };
           await rbDB.updateEntry(state.db, entry.id, patch);
           markTopicSearchIndexDirty();
+          if (keepModalOpen) state.modalNeedsRenderOnClose = true;
           if (!keepModalOpen) closeModal();
           await refreshEntries();
           if (!keepModalOpen) render();

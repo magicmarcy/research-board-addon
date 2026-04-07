@@ -81,7 +81,8 @@
     search: '',
     drag: { type: null, id: null },
     kbdNav: { index: -1, id: null },
-    popupKeepModalOpenOnNextSave: false
+    popupKeepModalOpenOnNextSave: false,
+    modalNeedsRenderOnClose: false
   };
   const THEME_MODE_KEY = 'themeMode';
 
@@ -391,6 +392,7 @@
     ui.modalBody.innerHTML = '';
     ui.modalFooter.innerHTML = '';
     ui.modal.dataset.popupSaveMode = '';
+    state.modalNeedsRenderOnClose = false;
     if (body) ui.modalBody.appendChild(body);
     if (footer) ui.modalFooter.appendChild(footer);
     ui.modalOverlay.classList.remove('hidden');
@@ -470,7 +472,7 @@
 
     const closeWatchId = setInterval(() => {
       if (!popup.closed) return;
-      cleanup();
+      cleanup({ restoreModal: true });
     }, 500);
 
     channel.onmessage = (ev) => {
@@ -495,6 +497,12 @@
       if (msg.type === 'saveNoClose') {
         sourceTextarea.value = String(msg.value ?? '');
         sourceTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+        const requestId = Number(msg.requestId);
+        const ackSave = () => {
+          if (Number.isFinite(requestId)) {
+            channel.postMessage({ type: 'saveNoCloseAck', requestId });
+          }
+        };
         const saveBtn = ui.modalFooter?.querySelector('.btn--primary');
         if (saveBtn && ui.modal?.dataset?.popupSaveMode === 'update-entry') {
           state.popupKeepModalOpenOnNextSave = true;
@@ -502,10 +510,11 @@
         } else {
           toast('Zwischengespeichert');
         }
+        ackSave();
         return;
       }
       if (msg.type === 'close') {
-        cleanup();
+        cleanup({ restoreModal: true });
       }
     };
   }
@@ -575,6 +584,10 @@
         }
         if (msg.type === 'saveNoClose') {
           await persistPopupValue(msg.value);
+          const requestId = Number(msg.requestId);
+          if (Number.isFinite(requestId)) {
+            channel.postMessage({ type: 'saveNoCloseAck', requestId });
+          }
           return;
         }
         if (msg.type === 'apply') {
@@ -603,6 +616,12 @@
     ui.modalFooter.innerHTML = '';
     ui.modal.dataset.popupSaveMode = '';
     state.popupKeepModalOpenOnNextSave = false;
+    const needsRender = state.modalNeedsRenderOnClose;
+    state.modalNeedsRenderOnClose = false;
+    if (needsRender) {
+      if (state.view === 'topic' && typeof renderTopicView === 'function') renderTopicView();
+      else if (typeof render === 'function') render();
+    }
   }
 
   /**
