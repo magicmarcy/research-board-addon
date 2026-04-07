@@ -11,3 +11,6 @@ web-ext-artifacts/
 
 # Local manifest with private add-on id/signing setup
 manifest.json
+node_modules/
+
+.codex
