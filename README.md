@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.10.1**
+Aktuelle Version: **1.11.0**
 
 ## Features
 
@@ -45,6 +45,10 @@ Aktuelle Version: **1.10.1**
   - Externes, separates Popup-Fenster zum Bearbeiten langer Inhalte
   - Popup-`Speichern` übernimmt den Text und speichert den Eintrag direkt
   - `Ctrl+S` im Popup speichert ohne das Popup zu schließen
+- Flexible Oberfläche: Sidebar und Tab-Ansicht
+  - In der Sidebar über Footer-Link `Im Tab öffnen` auf eine größere Arbeitsfläche wechseln
+  - In der Tab-Ansicht über `Zur Sidebar` zurück wechseln (öffnet Sidebar und schließt den Tab)
+  - Modale Dialoge sind in der Tab-Ansicht größer dargestellt
 - Drag-and-Drop-Unterstützung für Inhalte und Sortierung
 - Globale Suche in Themen und Einträgen:
   - Kombinierte Trefferliste für passende Themen und Einträge
@@ -120,6 +124,7 @@ Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
 ## Nutzung (Kurzfassung)
 
 1. Sidebar über Toolbar-Icon `Research Board` öffnen.
+   - Optional: Über `Im Tab öffnen` in eine größere Tab-Ansicht wechseln.
 2. Thema anlegen oder `Inbox` verwenden.
 3. Inhalte speichern:
    - Rechtsklick auf Seite/Link/Auswahl -> `Zum Research Board hinzufügen`

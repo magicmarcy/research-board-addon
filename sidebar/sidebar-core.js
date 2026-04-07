@@ -58,7 +58,11 @@
   };
 
   // Central in-memory application state for the sidebar runtime.
+  const SURFACE_MODE = new URLSearchParams(window.location.search).get('view') === 'tab'
+    ? 'tab'
+    : 'sidebar';
   const state = {
+    surfaceMode: SURFACE_MODE,
     db: null,
     includeArchived: false,
     includeArchivedEntries: false,
@@ -116,6 +120,8 @@
     modalClose: $('#modalClose')
   };
   let toastTimerId = null;
+  document.documentElement.setAttribute('data-surface', state.surfaceMode);
+  document.body?.setAttribute('data-surface', state.surfaceMode);
 
   /**
    * Apply the requested light/dark theme to the sidebar root and update the toggle affordance.
@@ -1501,8 +1507,21 @@
    * @returns {HTMLElement} Footer node.
    */
   function renderSidebarFooter() {
+    const surfaceToggleButton = state.surfaceMode === 'tab'
+      ? el('button', {
+        class: 'link-subtle',
+        title: 'Zur Sidebar wechseln und diesen Tab schließen',
+        onclick: returnToSidebarFromTab
+      }, ['Zur Sidebar'])
+      : el('button', {
+        class: 'link-subtle',
+        title: 'Research Board in neuem Tab öffnen',
+        onclick: openBoardInNewTab
+      }, ['Im Tab öffnen']);
+
     return el('div', { class: 'sidebar-footer' }, [
       el('div', { class: 'sidebar-footer__links' }, [
+        surfaceToggleButton,
         el('button', { class: 'link-subtle', onclick: showHelpModal }, ['Hilfe']),
         el('button', { class: 'link-subtle', onclick: openOptionsPage }, ['Einstellungen'])
       ]),
@@ -1526,5 +1545,50 @@
     } catch (error) {
       console.error(error);
       toast('Einstellungen konnten nicht geöffnet werden');
+    }
+  }
+
+  /**
+   * Open the current board UI in a dedicated extension tab and close the sidebar.
+   * Must be called from a user action.
+   *
+   * @returns {Promise<void>}
+   */
+  async function openBoardInNewTab() {
+    const url = ext.runtime.getURL('sidebar/sidebar.html?view=tab');
+    let openedTab = null;
+    try {
+      // Start both calls inside the same click handler to preserve user-action gating.
+      const createTabPromise = ext.tabs.create({ url });
+      const closeSidebarPromise = ext.sidebarAction?.close?.();
+      openedTab = await createTabPromise;
+      await closeSidebarPromise;
+    } catch (error) {
+      // If tab creation succeeded but sidebar close failed, avoid a misleading tab error toast.
+      if (openedTab?.id != null) {
+        console.warn('Board tab opened but closing sidebar failed', error);
+        return;
+      }
+      console.error(error);
+      toast('Tab konnte nicht geöffnet werden');
+    }
+  }
+
+  /**
+   * Open the sidebar from tab mode and close the current board tab.
+   * Must be called from a user action.
+   *
+   * @returns {Promise<void>}
+   */
+  async function returnToSidebarFromTab() {
+    try {
+      await ext.sidebarAction?.open?.();
+      const currentTab = await ext.tabs?.getCurrent?.();
+      if (currentTab?.id != null) {
+        await ext.tabs.remove(currentTab.id);
+      }
+    } catch (error) {
+      console.error(error);
+      toast('Sidebar konnte nicht geöffnet werden');
     }
   }

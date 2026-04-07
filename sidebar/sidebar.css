@@ -49,6 +49,19 @@ body {
   font-size: 15px;
 }
 
+html[data-surface="tab"],
+body[data-surface="tab"] {
+  min-height: 100vh;
+}
+
+body[data-surface="tab"] {
+  padding: 18px;
+  background:
+    radial-gradient(1100px 380px at 5% -15%, color-mix(in oklab, var(--accent-weak) 78%, var(--bg)) 0%, transparent 60%),
+    radial-gradient(900px 360px at 95% 0%, color-mix(in oklab, var(--accent-weak) 56%, var(--bg)) 0%, transparent 65%),
+    var(--bg);
+}
+
 button,
 input,
 textarea,
@@ -62,6 +75,31 @@ select {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+body[data-surface="tab"] .app {
+  max-width: 1180px;
+  margin: 0 auto;
+  min-height: calc(100vh - 36px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+}
+
+@media (max-width: 760px) {
+  body[data-surface="tab"] {
+    padding: 0;
+  }
+
+  body[data-surface="tab"] .app {
+    max-width: none;
+    min-height: 100vh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
 
 .topbar {
@@ -1305,6 +1343,28 @@ select {
   padding: 12px;
   overflow: auto;
   min-height: 0;
+}
+
+body[data-surface="tab"] .overlay {
+  padding: 24px;
+}
+
+body[data-surface="tab"] .modal {
+  width: min(900px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  border-radius: 12px;
+}
+
+@media (max-width: 760px) {
+  body[data-surface="tab"] .overlay {
+    padding: 10px;
+  }
+
+  body[data-surface="tab"] .modal {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 20px);
+    border-radius: var(--radius);
+  }
 }
 
 .modal__footer {
