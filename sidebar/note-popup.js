@@ -15,19 +15,38 @@
    */
   const params = new URLSearchParams(location.search);
   const channelId = params.get('channel') || '';
-  const title = params.get('title') || 'Notiz bearbeiten';
+  const baseTitle = params.get('title') || 'Notiz bearbeiten';
   const theme = params.get('theme') || 'light';
+  const showTitleEditor = params.get('showTitleEditor') === '1';
 
   // Cache the popup DOM nodes once; there is no dynamic rerendering in this window.
   const titleNode = document.getElementById('popupTitle');
+  const titleFieldWrap = document.getElementById('titleFieldWrap');
+  const titleEditor = document.getElementById('titleEditor');
   const editor = document.getElementById('editor');
   const closeBtn = document.getElementById('closeBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const applyBtn = document.getElementById('applyBtn');
 
+  /**
+   * Keep the browser window title aligned with the note title when available.
+   *
+   * @returns {void}
+   */
+  const syncWindowTitle = () => {
+    const currentTitle = showTitleEditor ? String(titleEditor?.value || '').trim() : '';
+    document.title = currentTitle || baseTitle;
+  };
+
   document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
-  document.title = title;
-  if (titleNode) titleNode.textContent = title;
+  if (titleNode) titleNode.textContent = baseTitle;
+  if (showTitleEditor) {
+    titleFieldWrap?.classList.remove('hidden');
+    titleEditor?.addEventListener('input', syncWindowTitle);
+  } else {
+    titleFieldWrap?.classList.add('hidden');
+  }
+  syncWindowTitle();
 
   // Abort early if the popup cannot communicate with its opener or the editor is missing.
   if (!channelId || !editor) {
@@ -61,7 +80,11 @@
    * @returns {void}
    */
   const apply = () => {
-    channel.postMessage({ type: 'apply', value: editor.value });
+    channel.postMessage({
+      type: 'apply',
+      value: editor.value,
+      entryTitle: showTitleEditor ? String(titleEditor?.value ?? '') : undefined
+    });
     close();
   };
 
@@ -72,7 +95,12 @@
    */
   const saveWithoutClose = () => {
     saveRequestSeq += 1;
-    channel.postMessage({ type: 'saveNoClose', value: editor.value, requestId: saveRequestSeq });
+    channel.postMessage({
+      type: 'saveNoClose',
+      value: editor.value,
+      entryTitle: showTitleEditor ? String(titleEditor?.value ?? '') : undefined,
+      requestId: saveRequestSeq
+    });
   };
 
   /**
@@ -86,6 +114,10 @@
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'initValue') {
       editor.value = String(msg.value ?? '');
+      if (showTitleEditor && titleEditor && Object.prototype.hasOwnProperty.call(msg, 'entryTitle')) {
+        titleEditor.value = String(msg.entryTitle ?? '');
+      }
+      syncWindowTitle();
       editor.focus();
       return;
     }

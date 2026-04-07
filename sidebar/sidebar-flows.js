@@ -308,7 +308,7 @@
       titleInput = el('input', { class: 'input', placeholder: 'Kurztitel (optional)', value: preset.title || '' });
       excerptInput = el('textarea', { class: 'textarea', placeholder: 'Textauszug', value: preset.excerpt || '' });
       fields.push(
-        el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Textauszug']), makeZoomableTextarea(excerptInput, 'Textauszug bearbeiten')]),
+        el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Textauszug']), makeZoomableTextarea(excerptInput, 'Textauszug bearbeiten', { sourceTitleInput: titleInput })]),
         el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Titel (optional)']), titleInput])
       );
     }
@@ -320,7 +320,7 @@
       noteInput.value = preset.excerpt || preset.note || '';
       fields.push(
         el('div', { class: 'field' }, [el('div', { class: 'label' }, ['Titel (optional)']), titleInput]),
-        el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Notiz']), makeZoomableTextarea(noteInput, 'Notiz bearbeiten')])
+        el('div', { class: 'field', style: 'margin-top:10px;' }, [el('div', { class: 'label' }, ['Notiz']), makeZoomableTextarea(noteInput, 'Notiz bearbeiten', { sourceTitleInput: titleInput })])
       );
     } else if (type === 'todo') {
       titleInput = el('input', { class: 'input', placeholder: 'Titel (optional)', value: preset.title || '' });
@@ -491,7 +491,11 @@
       (entry.type !== 'link' && entry.type !== 'todo')
         ? el('div', { class: 'field', style: 'margin-top:10px;' }, [
             el('div', { class: 'label' }, [entry.type === 'quote' ? 'Textauszug' : 'Notiztext']),
-            makeZoomableTextarea(excerptInput, entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten')
+            makeZoomableTextarea(
+              excerptInput,
+              entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten',
+              { sourceTitleInput: titleInput }
+            )
           ])
         : null,
 
@@ -545,10 +549,20 @@
           };
           await rbDB.updateEntry(state.db, entry.id, patch);
           markTopicSearchIndexDirty();
-          if (keepModalOpen) state.modalNeedsRenderOnClose = true;
-          if (!keepModalOpen) closeModal();
           await refreshEntries();
-          if (!keepModalOpen) render();
+          if (keepModalOpen) {
+            // Keep the detail modal open for popup-driven Ctrl+S saves, but refresh
+            // the list view immediately so title/content changes are visible right away.
+            if (state.view === 'topic') {
+              renderTopicView();
+            } else {
+              render();
+            }
+            state.modalNeedsRenderOnClose = false;
+          } else {
+            closeModal();
+            render();
+          }
           toast('Gespeichert');
         } }, ['Speichern'])
       ])

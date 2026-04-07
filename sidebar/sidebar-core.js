@@ -410,9 +410,10 @@
    *
    * @param {HTMLTextAreaElement} textarea Source textarea.
    * @param {string} popupTitle Popup window title.
+   * @param {{ sourceTitleInput?: HTMLInputElement|null }} [options={}] Optional linked title input.
    * @returns {HTMLDivElement} Wrapper containing textarea and zoom button.
    */
-  function makeZoomableTextarea(textarea, popupTitle) {
+  function makeZoomableTextarea(textarea, popupTitle, { sourceTitleInput = null } = {}) {
     const wrap = el('div', { class: 'textarea-zoom-wrap' }, [textarea]);
     const zoomBtn = el('button', {
       type: 'button',
@@ -424,7 +425,8 @@
     zoomBtn.addEventListener('click', () => {
       openTextareaPopup({
         title: popupTitle || 'Text bearbeiten',
-        sourceTextarea: textarea
+        sourceTextarea: textarea,
+        sourceTitleInput
       });
     });
 
@@ -435,17 +437,18 @@
   /**
    * Open a detached popup editor for a textarea used inside the sidebar or a modal dialog.
    *
-   * @param {{ title?: string, sourceTextarea: HTMLTextAreaElement }} config Popup configuration.
+   * @param {{ title?: string, sourceTextarea: HTMLTextAreaElement, sourceTitleInput?: HTMLInputElement|null }} config Popup configuration.
    * @returns {void}
    */
-  function openTextareaPopup({ title, sourceTextarea }) {
+  function openTextareaPopup({ title, sourceTextarea, sourceTitleInput = null }) {
     if (!sourceTextarea) return;
 
     const channelId = `note-popup-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const popupTitle = title || 'Text bearbeiten';
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const showTitleEditor = !!sourceTitleInput;
     const url = ext.runtime.getURL(
-      `sidebar/note-popup.html?channel=${encodeURIComponent(channelId)}&title=${encodeURIComponent(popupTitle)}&theme=${encodeURIComponent(theme)}`
+      `sidebar/note-popup.html?channel=${encodeURIComponent(channelId)}&title=${encodeURIComponent(popupTitle)}&theme=${encodeURIComponent(theme)}&showTitleEditor=${showTitleEditor ? '1' : '0'}`
     );
 
     const channel = new BroadcastChannel(channelId);
@@ -485,12 +488,20 @@
       const msg = ev?.data;
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === 'popupReady') {
-        channel.postMessage({ type: 'initValue', value: sourceTextarea.value || '' });
+        channel.postMessage({
+          type: 'initValue',
+          value: sourceTextarea.value || '',
+          entryTitle: sourceTitleInput ? sourceTitleInput.value || '' : ''
+        });
         return;
       }
       if (msg.type === 'apply') {
         sourceTextarea.value = String(msg.value ?? '');
         sourceTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+        if (sourceTitleInput && Object.prototype.hasOwnProperty.call(msg, 'entryTitle')) {
+          sourceTitleInput.value = String(msg.entryTitle ?? '');
+          sourceTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         const saveBtn = ui.modalFooter?.querySelector('.btn--primary');
         if (saveBtn) {
           saveBtn.click();
@@ -503,6 +514,10 @@
       if (msg.type === 'saveNoClose') {
         sourceTextarea.value = String(msg.value ?? '');
         sourceTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+        if (sourceTitleInput && Object.prototype.hasOwnProperty.call(msg, 'entryTitle')) {
+          sourceTitleInput.value = String(msg.entryTitle ?? '');
+          sourceTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
         const requestId = Number(msg.requestId);
         const ackSave = () => {
           if (Number.isFinite(requestId)) {
@@ -540,9 +555,10 @@
 
     const channelId = `note-popup-entry-${entry.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
-    const popupTitle = entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten';
+    const defaultPopupTitle = entry.type === 'quote' ? 'Textauszug bearbeiten' : 'Notiz bearbeiten';
+    const popupTitle = String(entry.title || '').trim() || defaultPopupTitle;
     const url = ext.runtime.getURL(
-      `sidebar/note-popup.html?channel=${encodeURIComponent(channelId)}&title=${encodeURIComponent(popupTitle)}&theme=${encodeURIComponent(theme)}`
+      `sidebar/note-popup.html?channel=${encodeURIComponent(channelId)}&title=${encodeURIComponent(popupTitle)}&theme=${encodeURIComponent(theme)}&showTitleEditor=1`
     );
 
     const channel = new BroadcastChannel(channelId);
@@ -567,11 +583,16 @@
       cleanup();
     }, 500);
 
-    const persistPopupValue = async (value) => {
-      const next = String(value ?? '');
+    const persistPopupValue = async ({ value, entryTitle }) => {
+      const nextExcerpt = String(value ?? '');
+      const nextTitle = String(entryTitle ?? '').trim();
       if (entry.type === 'note' || entry.type === 'quote') {
-        await rbDB.updateEntry(state.db, entry.id, { excerpt: next });
-        entry.excerpt = next;
+        await rbDB.updateEntry(state.db, entry.id, {
+          excerpt: nextExcerpt,
+          title: nextTitle
+        });
+        entry.excerpt = nextExcerpt;
+        entry.title = nextTitle;
       }
       markTopicSearchIndexDirty();
       await refreshEntries();
@@ -585,11 +606,15 @@
 
       (async () => {
         if (msg.type === 'popupReady') {
-          channel.postMessage({ type: 'initValue', value: entry.excerpt || '' });
+          channel.postMessage({
+            type: 'initValue',
+            value: entry.excerpt || '',
+            entryTitle: entry.title || ''
+          });
           return;
         }
         if (msg.type === 'saveNoClose') {
-          await persistPopupValue(msg.value);
+          await persistPopupValue({ value: msg.value, entryTitle: msg.entryTitle });
           const requestId = Number(msg.requestId);
           if (Number.isFinite(requestId)) {
             channel.postMessage({ type: 'saveNoCloseAck', requestId });
@@ -597,7 +622,7 @@
           return;
         }
         if (msg.type === 'apply') {
-          await persistPopupValue(msg.value);
+          await persistPopupValue({ value: msg.value, entryTitle: msg.entryTitle });
           return;
         }
         if (msg.type === 'close') {
