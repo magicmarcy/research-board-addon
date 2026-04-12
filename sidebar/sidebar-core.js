@@ -135,7 +135,10 @@
     if (ui.themeToggleBtn) {
       ui.themeToggleBtn.title = next === 'dark' ? 'Hell aktivieren' : 'Dunkel aktivieren';
       ui.themeToggleBtn.setAttribute('aria-label', ui.themeToggleBtn.title);
-      ui.themeToggleBtn.innerHTML = `<span class="icon">${next === 'dark' ? '☾' : '☼'}</span>`;
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = next === 'dark' ? '☾' : '☼';
+      ui.themeToggleBtn.replaceChildren(icon);
     }
     return next;
   }
