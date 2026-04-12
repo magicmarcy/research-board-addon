@@ -2,7 +2,8 @@
   "scripts": {
     "test": "node --test",
     "test:unit": "node --test test/db.unit.test.js",
-    "test:integration": "node --test test/db.integration.test.js"
+    "test:integration": "node --test test/db.integration.test.js",
+    "sign:unlisted": "web-ext sign --channel unlisted --api-key \"$WEB_EXT_API_KEY\" --api-secret \"$WEB_EXT_API_SECRET\" --source-dir . --ignore-files \"test/**\" \"**/*.test.js\" \"**/*.spec.js\" \"README.md\" \"package.json\" \"package-lock.json\" \".git/**\" \".gitignore\" \"export/**\" \"manifest.template.json\" --artifacts-dir ./web-ext-artifacts"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",
