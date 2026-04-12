@@ -169,6 +169,7 @@
   async function archiveEntryFlow(entryId, archived) {
     await rbDB.setEntryArchived(state.db, entryId, archived);
     markTopicSearchIndexDirty();
+    await refreshTopics();
     await refreshEntries();
     renderTopicView();
     toast(archived ? 'Eintrag archiviert' : 'Eintrag wiederhergestellt');
