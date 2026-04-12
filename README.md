@@ -121,6 +121,53 @@ npx web-ext build
 
 Das Build-Artefakt landet standardmäßig in `web-ext-artifacts/`.
 
+### Unit-Tests
+
+Für reproduzierbare Logik-Tests nutzt das Projekt den eingebauten Node-Test-Runner (`node:test`).
+
+Ausführen:
+
+```bash
+npm run test:unit
+```
+
+Abgedeckter Start-Scope (siehe `test/db.unit.test.js`):
+
+- Todo-Normalisierung (`normalizeTodoItems`)
+- Sortiermodus-Normalisierung (`normalizeEntrySortMode`)
+- Einstellungen-Normalisierung (`normalizeAppSettings`)
+- Storage-nahe Helper mit Mock (`exportAppSettings`, `applyImportedSettings`, Change-Token-Helper)
+
+Hinweis:
+
+- Die aktuellen Tests sind bewusst als **Unit-Tests** gehalten (ohne echtes IndexedDB), um Logikfehler früh zu erkennen.
+- Integrations-/E2E-Tests können später ergänzend folgen.
+
+### Integrations-Tests (DB)
+
+Zusätzlich gibt es Integrations-Tests für die Persistence-Ebene in `shared/db.js`.
+Hier wird echtes IndexedDB-Verhalten über `fake-indexeddb` simuliert.
+
+Ausführen:
+
+```bash
+npm run test:integration
+```
+
+Aktuell abgedeckte Integrationsfälle (siehe `test/db.integration.test.js`):
+
+- Themen anlegen inklusive Normalisierung und Positionsreihenfolge
+- Einträge archivieren inklusive Bucket-Wechsel und Positionsvergabe
+- Einträge sortieren mit Berücksichtigung von Topic- und Archiv-Bucket-Grenzen
+- Einträge in ein anderes Thema verschieben (Append am Ende der Zielreihenfolge)
+- Thema löschen inklusive Cascade-Löschung abhängiger Einträge
+
+Alle Tests zusammen:
+
+```bash
+npm test
+```
+
 ## Nutzung (Kurzfassung)
 
 1. Sidebar über Toolbar-Icon `Research Board` öffnen.

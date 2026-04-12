@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "test": "node --test",
+    "test:unit": "node --test test/db.unit.test.js",
+    "test:integration": "node --test test/db.integration.test.js"
+  },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "web-ext": "^7.11.0"
   }
 }
