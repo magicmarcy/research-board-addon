@@ -3,7 +3,7 @@
 Lokales Recherche-Board als Firefox-Add-on mit Sidebar-UI.  
 Du sammelst Themen, Links, Zitate und Notizen direkt beim Browsen und verwaltest alles lokal im Browserprofil.
 
-Aktuelle Version: **1.11.4**
+Aktuelle Version: **1.11.5**
 
 ## Features
 
@@ -68,6 +68,12 @@ Aktuelle Version: **1.11.4**
   - Import-Modi: zusammenführen oder ersetzen
   - Einstellungen beim Import optional mit übernehmen oder auslassen
 - Lokale Auto-Backups mit Intervall, Änderungstrigger, Start-Backup, manuellem Backup und Restore (inkl. Sicherheits-Backup vor Wiederherstellung)
+- Backup-Datei-Workflow auf der Einstellungsseite:
+  - Vollständigen Datenstand inkl. Settings als JSON auf den Rechner exportieren
+  - JSON-Backup wieder importieren, z. B. für neue Browser-Instanzen
+  - Import-Modus wählbar: `Alles ersetzen` oder `Zusammenführen`
+  - Settings beim Import optional überschreiben oder bestehende Settings beibehalten
+  - Inbox-sicheres Zusammenführen: Beim Merge wird keine zweite `Inbox` angelegt
 - Vollständig lokal, ohne externe Backend-Abhängigkeit
 
 ## Installation
