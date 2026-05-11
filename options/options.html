@@ -70,6 +70,16 @@
       <div id="backupList" class="list"></div>
     </section>
 
+    <section class="card">
+      <h2>Backup-Datei</h2>
+      <p class="hint">Exportiert den aktuellen Stand inklusive Einstellungen als JSON-Datei. Diese Datei kann später in einer anderen Instanz wieder importiert werden.</p>
+      <div class="actions">
+        <button id="exportBackupBtn" class="btn btn--primary" type="button">Backup exportieren</button>
+        <button id="importBackupBtn" class="btn" type="button">Backup importieren</button>
+        <input id="importBackupFileInput" type="file" accept="application/json,.json" class="sr-only" />
+      </div>
+    </section>
+
     <div id="status" class="status">Lade Einstellungen ...</div>
   </main>
 

@@ -456,6 +456,20 @@
         return { ok: true };
       }
 
+      if (msg.type === 'autoBackupExport') {
+        const db = await rbDB.openDb();
+        const snapshot = await rbDB.exportAll(db);
+        return { ok: true, snapshot };
+      }
+
+      if (msg.type === 'autoBackupImport') {
+        await rbAutoBackup.importSnapshot(msg.payload);
+        await safe(ext.runtime.sendMessage({ type: 'dataRestored' }));
+        await rebuildContextMenus();
+        const backups = await rbAutoBackup.listBackupsMeta();
+        return { ok: true, backups };
+      }
+
       return undefined;
     })()
       .then((result) => sendResponse(result))

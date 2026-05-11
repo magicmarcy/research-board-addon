@@ -416,6 +416,25 @@
   }
 
   /**
+   * Normalize and validate a generic imported backup payload.
+   *
+   * Accepts either a raw snapshot (`{ topics, entries, settings }`) or a wrapped
+   * backup export (`{ snapshot: { ... } }`).
+   *
+   * @param {object} payload Imported JSON payload.
+   * @returns {object} Normalized backup snapshot.
+   */
+  function normalizeImportedSnapshotPayload(payload) {
+    const root = payload && typeof payload === 'object' ? payload : null;
+    if (!root) throw new Error('Import-Datei ist ungueltig.');
+    const snapshot = root.snapshot && typeof root.snapshot === 'object' ? root.snapshot : root;
+    if (!isValidBackupSnapshot(snapshot)) {
+      throw new Error('Import-Datei enthaelt kein gueltiges Backup.');
+    }
+    return snapshot;
+  }
+
+  /**
    * Replace all topic and entry data from a backup snapshot.
    *
    * @param {IDBDatabase} db Open database connection.
@@ -522,6 +541,33 @@
   }
 
   /**
+   * Import a snapshot payload and replace current data.
+   *
+   * @param {object} payload Imported payload (snapshot or wrapper with `snapshot` field).
+   * @returns {Promise<{ ok: boolean, signature: string }>} Import result metadata.
+   */
+  async function importSnapshot(payload) {
+    const snapshot = normalizeImportedSnapshotPayload(payload);
+    const db = await rbDB.openDb();
+
+    await createBackup({ reason: 'pre-restore', force: true });
+    await replaceAllDataFromSnapshot(db, snapshot);
+    await rbDB.applyImportedSettings(snapshot.settings);
+
+    const signature = snapshotSignature(snapshot);
+    const now = rbDB.nowIso();
+    const changeState = await rbDB.getChangeState();
+    await ext.storage.local.set({
+      [STORAGE_KEYS.lastSignature]: signature,
+      [STORAGE_KEYS.lastRunAt]: now,
+      [STORAGE_KEYS.lastSavedAt]: now,
+      [STORAGE_KEYS.lastBackedUpChangeToken]: String(changeState?.token || '')
+    });
+
+    return { ok: true, signature };
+  }
+
+  /**
    * Schedule or clear the recurring auto-backup alarm based on current configuration.
    *
    * @returns {Promise<object>} Scheduling result.
@@ -583,6 +629,8 @@
     deleteBackup,
     clearBackups,
     restoreBackupById,
+    importSnapshot,
+    normalizeImportedSnapshotPayload,
     onAlarm
   };
 })();

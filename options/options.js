@@ -26,9 +26,31 @@
     targetUrlTemplateInput: document.getElementById('targetUrlTemplateInput'),
     runBackupBtn: document.getElementById('runBackupBtn'),
     deleteAllBtn: document.getElementById('deleteAllBtn'),
+    exportBackupBtn: document.getElementById('exportBackupBtn'),
+    importBackupBtn: document.getElementById('importBackupBtn'),
+    importBackupFileInput: document.getElementById('importBackupFileInput'),
     backupList: document.getElementById('backupList'),
     status: document.getElementById('status')
   };
+
+  function makeBackupExportFilename() {
+    const d = new Date();
+    const pad = (v) => String(v).padStart(2, '0');
+    const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `research-board-backup-${ts}.json`;
+  }
+
+  function triggerJsonDownload(filename, payload) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   /**
    * Update the status message area.
@@ -266,6 +288,56 @@
       if (!response?.ok) throw new Error(response?.error || 'Backups konnten nicht gelöscht werden.');
       renderBackups([]);
       setStatus('Alle Backups gelöscht.');
+    } catch (error) {
+      setStatus(error.message || String(error), true);
+    }
+  });
+
+  els.exportBackupBtn.addEventListener('click', async () => {
+    try {
+      setStatus('Export wird erstellt ...');
+      const response = await ext.runtime.sendMessage({ type: 'autoBackupExport' });
+      if (!response?.ok || !response.snapshot) throw new Error(response?.error || 'Backup konnte nicht exportiert werden.');
+      triggerJsonDownload(makeBackupExportFilename(), response.snapshot);
+      setStatus('Backup-Datei wurde exportiert.');
+    } catch (error) {
+      setStatus(error.message || String(error), true);
+    }
+  });
+
+  els.importBackupBtn.addEventListener('click', () => {
+    els.importBackupFileInput.value = '';
+    els.importBackupFileInput.click();
+  });
+
+  els.importBackupFileInput.addEventListener('change', async () => {
+    const file = els.importBackupFileInput.files && els.importBackupFileInput.files[0];
+    if (!file) return;
+
+    try {
+      setStatus('Import wird geprüft ...');
+      const raw = await file.text();
+      let payload;
+      try {
+        payload = JSON.parse(raw);
+      } catch (_) {
+        throw new Error('Datei ist kein gueltiges JSON.');
+      }
+
+      const ok = confirm(
+        'Backup importieren? Aktuelle Daten und Einstellungen werden ersetzt. ' +
+        'Vorher wird automatisch ein Sicherheits-Backup erstellt.'
+      );
+      if (!ok) {
+        setStatus('Import abgebrochen.');
+        return;
+      }
+
+      const response = await ext.runtime.sendMessage({ type: 'autoBackupImport', payload });
+      if (!response?.ok) throw new Error(response?.error || 'Import fehlgeschlagen.');
+      renderBackups(response.backups || []);
+      await load();
+      setStatus('Backup wurde importiert.');
     } catch (error) {
       setStatus(error.message || String(error), true);
     }
