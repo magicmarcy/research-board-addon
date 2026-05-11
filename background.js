@@ -463,7 +463,7 @@
       }
 
       if (msg.type === 'autoBackupImport') {
-        await rbAutoBackup.importSnapshot(msg.payload);
+        await rbAutoBackup.importSnapshot(msg.payload, msg.options || {});
         await safe(ext.runtime.sendMessage({ type: 'dataRestored' }));
         await rebuildContextMenus();
         const backups = await rbAutoBackup.listBackupsMeta();

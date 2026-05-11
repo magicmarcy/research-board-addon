@@ -73,6 +73,19 @@
     <section class="card">
       <h2>Backup-Datei</h2>
       <p class="hint">Exportiert den aktuellen Stand inklusive Einstellungen als JSON-Datei. Diese Datei kann später in einer anderen Instanz wieder importiert werden.</p>
+      <div class="form">
+        <label class="field">
+          <span>Import-Modus</span>
+          <select id="importModeInput">
+            <option value="replace">Alles ersetzen</option>
+            <option value="merge">Zusammenführen</option>
+          </select>
+        </label>
+        <label class="row checkbox">
+          <input id="importOverwriteSettingsInput" type="checkbox" checked />
+          <span>Einstellungen beim Import überschreiben</span>
+        </label>
+      </div>
       <div class="actions">
         <button id="exportBackupBtn" class="btn btn--primary" type="button">Backup exportieren</button>
         <button id="importBackupBtn" class="btn" type="button">Backup importieren</button>

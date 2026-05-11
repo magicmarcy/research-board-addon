@@ -503,6 +503,82 @@
   }
 
   /**
+   * Merge topics and entries from a backup snapshot into existing data.
+   *
+   * Existing items with the same id are updated, missing items are inserted.
+   *
+   * @param {IDBDatabase} db Open database connection.
+   * @param {object} snapshot Backup snapshot.
+   * @returns {Promise<void>}
+   */
+  async function mergeDataFromSnapshot(db, snapshot) {
+    const existingTopics = await rbDB.getAllTopics(db, { includeArchived: true });
+    const topicIdMap = new Map();
+    const existingInbox = existingTopics.find((topic) => String(topic?.title || '').trim().toLowerCase() === 'inbox');
+
+    const tx = db.transaction(['topics', 'entries'], 'readwrite');
+    const topicsStore = tx.objectStore('topics');
+    const entriesStore = tx.objectStore('entries');
+
+    for (const topic of snapshot.topics) {
+      let targetTopicId = topic.id || rbDB.uuid();
+      if (
+        existingInbox &&
+        String(topic?.title || '').trim().toLowerCase() === 'inbox' &&
+        targetTopicId !== existingInbox.id
+      ) {
+        // Avoid duplicate default Inbox folders by merging imported Inbox into the existing one.
+        topicIdMap.set(targetTopicId, existingInbox.id);
+        targetTopicId = existingInbox.id;
+      }
+      const normalizedTopic = {
+        id: targetTopicId,
+        title: topic.title || 'Import',
+        description: topic.description || '',
+        color: topic.color || '',
+        archived: !!topic.archived,
+        highlighted: !!topic.highlighted,
+        pinned: !!topic.pinned,
+        createdAt: topic.createdAt || rbDB.nowIso(),
+        updatedAt: topic.updatedAt || rbDB.nowIso(),
+        position: Number.isFinite(topic.position) ? topic.position : 1
+      };
+      topicsStore.put(normalizedTopic);
+    }
+
+    for (const entry of snapshot.entries) {
+      const sourceTopicId = entry.topicId || '';
+      const mappedTopicId = topicIdMap.get(sourceTopicId) || sourceTopicId;
+      const normalizedEntry = {
+        id: entry.id || rbDB.uuid(),
+        topicId: mappedTopicId,
+        type: entry.type || 'note',
+        title: entry.title || '',
+        url: entry.url || '',
+        sourcePageTitle: entry.sourcePageTitle || '',
+        sourcePageUrl: entry.sourcePageUrl || '',
+        linkText: entry.linkText || '',
+        excerpt: entry.excerpt || '',
+        note: entry.note || '',
+        todos: rbDB.normalizeTodoItems(entry.todos),
+        highlighted: !!entry.highlighted,
+        pinned: !!entry.pinned,
+        createdAt: entry.createdAt || rbDB.nowIso(),
+        updatedAt: entry.updatedAt || rbDB.nowIso(),
+        position: Number.isFinite(entry.position) ? entry.position : 1
+      };
+      entriesStore.put(normalizedEntry);
+    }
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+    await rbDB.touchChangeToken();
+  }
+
+  /**
    * Restore one backup and refresh the backup bookkeeping metadata afterward.
    *
    * A forced pre-restore backup is created first so destructive restore operations
@@ -546,13 +622,21 @@
    * @param {object} payload Imported payload (snapshot or wrapper with `snapshot` field).
    * @returns {Promise<{ ok: boolean, signature: string }>} Import result metadata.
    */
-  async function importSnapshot(payload) {
+  async function importSnapshot(payload, options = {}) {
     const snapshot = normalizeImportedSnapshotPayload(payload);
     const db = await rbDB.openDb();
+    const mode = options.mode === 'merge' ? 'merge' : 'replace';
+    const overwriteSettings = options.overwriteSettings !== false;
 
     await createBackup({ reason: 'pre-restore', force: true });
-    await replaceAllDataFromSnapshot(db, snapshot);
-    await rbDB.applyImportedSettings(snapshot.settings);
+    if (mode === 'merge') {
+      await mergeDataFromSnapshot(db, snapshot);
+    } else {
+      await replaceAllDataFromSnapshot(db, snapshot);
+    }
+    if (overwriteSettings) {
+      await rbDB.applyImportedSettings(snapshot.settings);
+    }
 
     const signature = snapshotSignature(snapshot);
     const now = rbDB.nowIso();

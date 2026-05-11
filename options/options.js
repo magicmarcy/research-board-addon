@@ -29,6 +29,8 @@
     exportBackupBtn: document.getElementById('exportBackupBtn'),
     importBackupBtn: document.getElementById('importBackupBtn'),
     importBackupFileInput: document.getElementById('importBackupFileInput'),
+    importModeInput: document.getElementById('importModeInput'),
+    importOverwriteSettingsInput: document.getElementById('importOverwriteSettingsInput'),
     backupList: document.getElementById('backupList'),
     status: document.getElementById('status')
   };
@@ -325,7 +327,9 @@
       }
 
       const ok = confirm(
-        'Backup importieren? Aktuelle Daten und Einstellungen werden ersetzt. ' +
+        `Backup importieren?\n\n` +
+        `Modus: ${els.importModeInput.value === 'merge' ? 'Zusammenführen' : 'Alles ersetzen'}\n` +
+        `Einstellungen überschreiben: ${els.importOverwriteSettingsInput.checked ? 'Ja' : 'Nein'}\n\n` +
         'Vorher wird automatisch ein Sicherheits-Backup erstellt.'
       );
       if (!ok) {
@@ -333,7 +337,14 @@
         return;
       }
 
-      const response = await ext.runtime.sendMessage({ type: 'autoBackupImport', payload });
+      const response = await ext.runtime.sendMessage({
+        type: 'autoBackupImport',
+        payload,
+        options: {
+          mode: els.importModeInput.value === 'merge' ? 'merge' : 'replace',
+          overwriteSettings: !!els.importOverwriteSettingsInput.checked
+        }
+      });
       if (!response?.ok) throw new Error(response?.error || 'Import fehlgeschlagen.');
       renderBackups(response.backups || []);
       await load();
